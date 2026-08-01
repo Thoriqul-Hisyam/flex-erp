@@ -1,11 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { Search, Settings, Bell, ChevronDown, Building2, GitBranch, Warehouse, Check, Layers, Square, CheckSquare } from "lucide-react";
-import { defaultSession } from "@/lib/auth/session";
+import {
+  Search,
+  Settings,
+  Bell,
+  ChevronDown,
+  Building2,
+  GitBranch,
+  Warehouse,
+  Check,
+  Layers,
+  Square,
+  CheckSquare,
+} from "lucide-react";
 import { useSiteSettings } from "@/components/providers/site-settings-provider";
 import { usePermission } from "@/lib/auth/use-permission";
-import { useModule, ModuleCategory } from "@/components/providers/module-provider";
+import {
+  useModule,
+  ModuleCategory,
+} from "@/components/providers/module-provider";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -17,16 +31,19 @@ export function Header() {
 
   const permission = usePermission("dashboard");
 
-  const displayName = permission.userName || defaultSession.user.name;
-  const displayRole = permission.roleName || defaultSession.user.role;
-  const displayCompany = permission.companyName || defaultSession.context.companyName;
-  const displayBranch = permission.branchName || defaultSession.context.branchName;
-  const displayWarehouse = permission.warehouseName || defaultSession.context.warehouseName;
+  const displayName = permission.userName || "";
+  const displayRole = permission.roleName || "";
+  const displayCompany = permission.companyName || "";
+  const displayBranch = permission.branchName || "";
+  const displayWarehouse = permission.warehouseName || "";
 
   // Close module menu on click outside
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (moduleMenuRef.current && !moduleMenuRef.current.contains(event.target as Node)) {
+      if (
+        moduleMenuRef.current &&
+        !moduleMenuRef.current.contains(event.target as Node)
+      ) {
         setIsModuleOpen(false);
       }
     }
@@ -37,7 +54,9 @@ export function Header() {
   // Compute label text for header pill
   const activeLabel = React.useMemo(() => {
     if (selectedModules.includes("ALL")) return "Semua Modul System";
-    const selectedOptions = availableModules.filter((m) => selectedModules.includes(m.id));
+    const selectedOptions = availableModules.filter((m) =>
+      selectedModules.includes(m.id),
+    );
     if (selectedOptions.length === 0) return "Semua Modul System";
     if (selectedOptions.length === 1) return selectedOptions[0].label;
     return `${selectedOptions[0].shortLabel} (+${selectedOptions.length - 1} Modul)`;
@@ -79,7 +98,12 @@ export function Header() {
           >
             <Layers className="h-4 w-4 text-[#0088ff]" />
             <span>{activeLabel}</span>
-            <ChevronDown className={cn("h-3.5 w-3.5 text-[#8a94a6] ml-1 transition-transform", isModuleOpen && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 text-[#8a94a6] ml-1 transition-transform",
+                isModuleOpen && "rotate-180",
+              )}
+            />
           </button>
 
           {/* Dropdown Menu */}
@@ -87,7 +111,9 @@ export function Header() {
             <div className="absolute left-0 mt-2 w-72 rounded-2xl bg-white dark:bg-[#161b26] p-3 shadow-2xl border border-[#e6e9f0] dark:border-slate-800 z-50 animate-in fade-in-50 zoom-in-95">
               <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2 flex items-center justify-between">
                 <span>Pemilihan Modul ERP</span>
-                <span className="text-[10px] text-blue-500 font-mono">Multi-Select Filter</span>
+                <span className="text-[10px] text-blue-500 font-mono">
+                  Multi-Select Filter
+                </span>
               </div>
               <div className="space-y-1">
                 {availableModules.map((mod) => {
@@ -102,11 +128,16 @@ export function Header() {
                         "w-full text-left px-3 py-2.5 rounded-xl text-xs transition-all flex items-center justify-between cursor-pointer",
                         isChecked
                           ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20"
-                          : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800",
                       )}
                     >
                       <div className="flex items-center gap-2.5">
-                        <Icon className={cn("h-4 w-4", isChecked ? "text-[#0088ff]" : "text-slate-400")} />
+                        <Icon
+                          className={cn(
+                            "h-4 w-4",
+                            isChecked ? "text-[#0088ff]" : "text-slate-400",
+                          )}
+                        />
                         <div>
                           <div className="font-semibold">{mod.label}</div>
                           <div className="text-[10px] text-slate-400 font-normal">
@@ -126,7 +157,8 @@ export function Header() {
                 })}
               </div>
               <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 px-2 leading-relaxed">
-                Centang satu atau beberapa modul untuk menampilkan menunya di sidebar. Modul tanpa hak akses tidak ditampilkan.
+                Centang satu atau beberapa modul untuk menampilkan menunya di
+                sidebar. Modul tanpa hak akses tidak ditampilkan.
               </div>
             </div>
           )}
@@ -159,7 +191,9 @@ export function Header() {
           title="Search (Cmd+K)"
         >
           <Search className="h-4 w-4" />
-          <span className="hidden md:inline font-medium">Search records...</span>
+          <span className="hidden md:inline font-medium">
+            Search records...
+          </span>
           <kbd className="hidden md:inline-block rounded bg-[#f8f9fc] dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono border border-[#e6e9f0] dark:border-slate-700">
             ⌘K
           </kbd>
@@ -179,13 +213,15 @@ export function Header() {
         {/* User Profile Pill */}
         <div className="flex items-center gap-2 bg-white dark:bg-[#12161f] pl-1.5 pr-3 py-1 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 cursor-pointer">
           <div className="h-7 w-7 rounded-full bg-[#0088ff] text-white flex items-center justify-center font-bold text-xs">
-            {displayName.split(" ")[0][0]}
+            {displayName.split(" ")[0]?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="hidden sm:block text-left text-xs leading-tight">
             <span className="block text-[9px] text-blue-600 dark:text-blue-400 font-extrabold font-mono uppercase tracking-wider">
               {permission.isLoading ? "..." : displayRole}
             </span>
-            <span className="font-bold text-[#0f172a] dark:text-white">{displayName}</span>
+            <span className="font-bold text-[#0f172a] dark:text-white">
+              {displayName}
+            </span>
           </div>
           <ChevronDown className="h-3.5 w-3.5 text-[#8a94a6] ml-0.5" />
         </div>

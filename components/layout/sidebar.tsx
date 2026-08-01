@@ -25,7 +25,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import { getSessionAllPermissionsAction } from "@/app/actions/crud-actions";
-import { useModule, ModuleCategory } from "@/components/providers/module-provider";
+import { signOutAction } from "@/app/actions/auth-actions";
+import {
+  useModule,
+  ModuleCategory,
+} from "@/components/providers/module-provider";
 
 export interface NavItem {
   icon: React.ElementType;
@@ -36,19 +40,97 @@ export interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { icon: LayoutDashboard, href: "/", label: "Dashboard Overview", pageKey: null, category: "ALL" },
-  { icon: Package, href: "/master-data/products", label: "Inventory Products", pageKey: "md_products", category: "MASTER_DATA" },
-  { icon: FolderTree, href: "/master-data/product-categories", label: "Product Categories", pageKey: "md_categories", category: "MASTER_DATA" },
-  { icon: Ruler, href: "/master-data/units", label: "Units of Measurement", pageKey: "md_units", category: "MASTER_DATA" },
-  { icon: Building2, href: "/master-data/companies", label: "Companies", pageKey: "md_companies", category: "MASTER_DATA" },
-  { icon: GitBranch, href: "/master-data/branches", label: "Branches", pageKey: "md_branches", category: "MASTER_DATA" },
-  { icon: Warehouse, href: "/master-data/warehouses", label: "Warehouses", pageKey: "md_warehouses", category: "MASTER_DATA" },
-  { icon: Receipt, href: "/master-data/taxes", label: "Tax Configuration", pageKey: "md_taxes", category: "MASTER_DATA" },
-  { icon: Users, href: "/master-data/customers", label: "Customers", pageKey: "crm_customers", category: "CRM" },
-  { icon: Truck, href: "/master-data/suppliers", label: "Suppliers", pageKey: "crm_suppliers", category: "CRM" },
-  { icon: UserCog, href: "/system/users", label: "Users Management", pageKey: "sys_users", category: "SYSTEM" },
-  { icon: ShieldCheck, href: "/system/roles", label: "RBAC Roles & Permissions", pageKey: "sys_roles", category: "SYSTEM" },
-  { icon: History, href: "/system/audit-logs", label: "System Audit Logs", pageKey: "sys_audit", category: "SYSTEM" },
+  {
+    icon: LayoutDashboard,
+    href: "/",
+    label: "Dashboard Overview",
+    pageKey: null,
+    category: "ALL",
+  },
+  {
+    icon: Package,
+    href: "/master-data/products",
+    label: "Inventory Products",
+    pageKey: "md_products",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: FolderTree,
+    href: "/master-data/product-categories",
+    label: "Product Categories",
+    pageKey: "md_categories",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Ruler,
+    href: "/master-data/units",
+    label: "Units of Measurement",
+    pageKey: "md_units",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Building2,
+    href: "/master-data/companies",
+    label: "Companies",
+    pageKey: "md_companies",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: GitBranch,
+    href: "/master-data/branches",
+    label: "Branches",
+    pageKey: "md_branches",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Warehouse,
+    href: "/master-data/warehouses",
+    label: "Warehouses",
+    pageKey: "md_warehouses",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Receipt,
+    href: "/master-data/taxes",
+    label: "Tax Configuration",
+    pageKey: "md_taxes",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Users,
+    href: "/master-data/customers",
+    label: "Customers",
+    pageKey: "crm_customers",
+    category: "CRM",
+  },
+  {
+    icon: Truck,
+    href: "/master-data/suppliers",
+    label: "Suppliers",
+    pageKey: "crm_suppliers",
+    category: "CRM",
+  },
+  {
+    icon: UserCog,
+    href: "/system/users",
+    label: "Users Management",
+    pageKey: "sys_users",
+    category: "SYSTEM",
+  },
+  {
+    icon: ShieldCheck,
+    href: "/system/roles",
+    label: "RBAC Roles & Permissions",
+    pageKey: "sys_roles",
+    category: "SYSTEM",
+  },
+  {
+    icon: History,
+    href: "/system/audit-logs",
+    label: "System Audit Logs",
+    pageKey: "sys_audit",
+    category: "SYSTEM",
+  },
 ];
 
 export function Sidebar() {
@@ -57,7 +139,8 @@ export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const { selectedModules } = useModule();
 
-  const [permissionFilteredItems, setPermissionFilteredItems] = React.useState<NavItem[]>(navItems);
+  const [permissionFilteredItems, setPermissionFilteredItems] =
+    React.useState<NavItem[]>(navItems);
 
   // Load RBAC permissions
   React.useEffect(() => {
@@ -72,7 +155,8 @@ export function Sidebar() {
           if (res.data.isSuperAdmin) {
             setPermissionFilteredItems(navItems);
           } else {
-            const permMap: Record<string, string[]> = res.data.permissionsMap || {};
+            const permMap: Record<string, string[]> =
+              res.data.permissionsMap || {};
             const filtered = navItems.filter((item) => {
               if (item.pageKey === null) return true;
               const actions = permMap[item.pageKey];
@@ -97,14 +181,12 @@ export function Sidebar() {
     if (selectedModules.includes("ALL")) return permissionFilteredItems;
 
     return permissionFilteredItems.filter(
-      (item) => item.href === "/" || selectedModules.includes(item.category)
+      (item) => item.href === "/" || selectedModules.includes(item.category),
     );
   }, [permissionFilteredItems, selectedModules]);
 
   const handleSignOut = () => {
-    document.cookie = "nexus_session=; path=/; max-age=0";
-    router.push("/login");
-    router.refresh();
+    void signOutAction();
   };
 
   return (
@@ -117,7 +199,7 @@ export function Sidebar() {
             "h-8 w-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
             theme === "light"
               ? "bg-[#0088ff] text-white shadow-sm shadow-blue-500/20"
-              : "text-[#8a94a6] hover:text-slate-900 dark:hover:text-white"
+              : "text-[#8a94a6] hover:text-slate-900 dark:hover:text-white",
           )}
           title="Switch to Light Theme"
         >
@@ -129,7 +211,7 @@ export function Sidebar() {
             "h-8 w-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
             theme === "dark"
               ? "bg-[#0088ff] text-white shadow-sm shadow-blue-500/20"
-              : "text-[#8a94a6] hover:text-slate-900 dark:hover:text-white"
+              : "text-[#8a94a6] hover:text-slate-900 dark:hover:text-white",
           )}
           title="Switch to Dark Theme"
         >
@@ -152,7 +234,7 @@ export function Sidebar() {
                 "h-10 w-10 shrink-0 rounded-2xl flex items-center justify-center transition-all cursor-pointer relative group",
                 isActive
                   ? "bg-[#0088ff] text-white shadow-md shadow-blue-500/25"
-                  : "text-[#8a94a6] hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                  : "text-[#8a94a6] hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
               )}
             >
               <Icon className="h-5 w-5" />

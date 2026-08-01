@@ -3,7 +3,7 @@
 import { db, schema } from "@/db";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { eq } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { getSessionUser } from "@/lib/auth/session";
 
 export interface ActionResult<T = any> {
   success: boolean;
@@ -12,50 +12,81 @@ export interface ActionResult<T = any> {
   message?: string;
 }
 
-// Global Server-side Dynamic Data Store (Fallback)
-const serverDataStore: Record<string, any[]> = {
-  productcategory: [],
-  product: [],
-  company: [],
-  branch: [],
-  warehouse: [],
-  customer: [],
-  supplier: [],
-  tax: [],
-  user: [],
-  role: [],
-};
-
 function getStoreKey(entityName: string): string {
   const normalized = entityName.toLowerCase();
-  if (normalized.includes("category") || normalized.includes("productcategory")) return "productcategory";
-  if (normalized.includes("product")) return "product";
-  if (normalized.includes("company")) return "company";
-  if (normalized.includes("branch")) return "branch";
-  if (normalized.includes("warehouse")) return "warehouse";
-  if (normalized.includes("customer")) return "customer";
-  if (normalized.includes("supplier")) return "supplier";
-  if (normalized.includes("unit")) return "unit";
-  if (normalized.includes("tax")) return "tax";
-  if (normalized.includes("user")) return "user";
-  if (normalized.includes("role")) return "role";
+  if (
+    normalized.includes("category") ||
+    normalized.includes("productcategory") ||
+    normalized.includes("kategori")
+  )
+    return "productcategory";
+  if (normalized.includes("product") || normalized.includes("produk"))
+    return "product";
+  if (normalized.includes("company") || normalized.includes("perusahaan"))
+    return "company";
+  if (normalized.includes("branch") || normalized.includes("cabang"))
+    return "branch";
+  if (normalized.includes("warehouse") || normalized.includes("gudang"))
+    return "warehouse";
+  if (normalized.includes("customer") || normalized.includes("pelanggan"))
+    return "customer";
+  if (normalized.includes("supplier") || normalized.includes("pemasok"))
+    return "supplier";
+  if (normalized.includes("unit") || normalized.includes("satuan"))
+    return "unit";
+  if (normalized.includes("tax") || normalized.includes("pajak")) return "tax";
+  if (
+    normalized.includes("user") ||
+    normalized.includes("pengguna") ||
+    normalized.includes("akun")
+  )
+    return "user";
+  if (
+    normalized.includes("role") ||
+    normalized.includes("peran") ||
+    normalized.includes("akses")
+  )
+    return "role";
   return normalized;
 }
 
 // Helper to map entity name string to Drizzle table
 function getTableForEntity(entityName: string) {
   const normalized = entityName.toLowerCase();
-  if (normalized.includes("category") || normalized.includes("productcategory")) return schema.productCategories;
-  if (normalized.includes("product")) return schema.products;
-  if (normalized.includes("company")) return schema.companies;
-  if (normalized.includes("branch")) return schema.branches;
-  if (normalized.includes("warehouse")) return schema.warehouses;
-  if (normalized.includes("customer")) return schema.customers;
-  if (normalized.includes("supplier")) return schema.suppliers;
-  if (normalized.includes("unit")) return schema.units;
-  if (normalized.includes("tax")) return schema.taxes;
-  if (normalized.includes("user")) return schema.users;
-  if (normalized.includes("role")) return schema.roles;
+  if (
+    normalized.includes("category") ||
+    normalized.includes("productcategory") ||
+    normalized.includes("kategori")
+  )
+    return schema.productCategories;
+  if (normalized.includes("product") || normalized.includes("produk"))
+    return schema.products;
+  if (normalized.includes("company") || normalized.includes("perusahaan"))
+    return schema.companies;
+  if (normalized.includes("branch") || normalized.includes("cabang"))
+    return schema.branches;
+  if (normalized.includes("warehouse") || normalized.includes("gudang"))
+    return schema.warehouses;
+  if (normalized.includes("customer") || normalized.includes("pelanggan"))
+    return schema.customers;
+  if (normalized.includes("supplier") || normalized.includes("pemasok"))
+    return schema.suppliers;
+  if (normalized.includes("unit") || normalized.includes("satuan"))
+    return schema.units;
+  if (normalized.includes("tax") || normalized.includes("pajak"))
+    return schema.taxes;
+  if (
+    normalized.includes("user") ||
+    normalized.includes("pengguna") ||
+    normalized.includes("akun")
+  )
+    return schema.users;
+  if (
+    normalized.includes("role") ||
+    normalized.includes("peran") ||
+    normalized.includes("akses")
+  )
+    return schema.roles;
   return null;
 }
 
@@ -103,7 +134,10 @@ async function getDefaultCompanyId(tenantId: string): Promise<string> {
 }
 
 // Helper to resolve valid Branch UUID for PostgreSQL tables requiring branchId
-async function getDefaultBranchId(tenantId: string, companyId: string): Promise<string> {
+async function getDefaultBranchId(
+  tenantId: string,
+  companyId: string,
+): Promise<string> {
   try {
     const branchesList = await db.select().from(schema.branches).limit(1);
     if (branchesList && branchesList[0]) return branchesList[0].id;
@@ -129,7 +163,10 @@ async function getDefaultBranchId(tenantId: string, companyId: string): Promise<
  * Filter out virtual/UI-only keys (e.g. companyName, branchName) so PostgreSQL queries don't fail,
  * and map form fields like city to SQL columns like address.
  */
-function sanitizePayloadForTable(entityName: string, payload: Record<string, any>): Record<string, any> {
+function sanitizePayloadForTable(
+  entityName: string,
+  payload: Record<string, any>,
+): Record<string, any> {
   const storeKey = getStoreKey(entityName);
   const clean: Record<string, any> = { ...payload };
 
@@ -139,7 +176,8 @@ function sanitizePayloadForTable(entityName: string, payload: Record<string, any
       clean.address = clean.city;
     }
     if (clean.isHeadquarters !== undefined) {
-      clean.isHeadquarters = clean.isHeadquarters === true || clean.isHeadquarters === "true";
+      clean.isHeadquarters =
+        clean.isHeadquarters === true || clean.isHeadquarters === "true";
     }
   }
   if (storeKey === "warehouse" && clean.address && !clean.location) {
@@ -147,14 +185,95 @@ function sanitizePayloadForTable(entityName: string, payload: Record<string, any
   }
 
   const allowedKeys: Record<string, string[]> = {
-    company: ["tenantId", "code", "name", "taxId", "email", "phone", "currency", "address", "logoUrl", "isDefault"],
-    branch: ["tenantId", "companyId", "code", "name", "phone", "address", "isHeadquarters"],
-    warehouse: ["tenantId", "companyId", "branchId", "code", "name", "location", "isDefault"],
+    company: [
+      "tenantId",
+      "code",
+      "name",
+      "taxId",
+      "email",
+      "phone",
+      "currency",
+      "address",
+      "logoUrl",
+      "isDefault",
+    ],
+    branch: [
+      "tenantId",
+      "companyId",
+      "code",
+      "name",
+      "phone",
+      "address",
+      "isHeadquarters",
+    ],
+    warehouse: [
+      "tenantId",
+      "companyId",
+      "branchId",
+      "code",
+      "name",
+      "location",
+      "isDefault",
+    ],
     productcategory: ["tenantId", "code", "name", "description", "status"],
-    product: ["tenantId", "companyId", "code", "sku", "name", "category", "type", "unit", "costPrice", "sellingPrice", "stockOnHand", "reorderLevel", "status"],
-    customer: ["tenantId", "companyId", "code", "name", "email", "phone", "creditLimit", "balanceOutstanding", "paymentTerms", "taxId", "address", "city", "country", "status"],
-    supplier: ["tenantId", "companyId", "code", "name", "email", "phone", "paymentTerms", "rating", "address", "city", "taxId", "status"],
-    user: ["tenantId", "companyId", "branchId", "roleId", "role", "code", "name", "email", "passwordHash", "avatarUrl", "status"],
+    product: [
+      "tenantId",
+      "companyId",
+      "code",
+      "sku",
+      "name",
+      "category",
+      "type",
+      "unit",
+      "costPrice",
+      "sellingPrice",
+      "stockOnHand",
+      "reorderLevel",
+      "status",
+    ],
+    customer: [
+      "tenantId",
+      "companyId",
+      "code",
+      "name",
+      "email",
+      "phone",
+      "creditLimit",
+      "balanceOutstanding",
+      "paymentTerms",
+      "taxId",
+      "address",
+      "city",
+      "country",
+      "status",
+    ],
+    supplier: [
+      "tenantId",
+      "companyId",
+      "code",
+      "name",
+      "email",
+      "phone",
+      "paymentTerms",
+      "rating",
+      "address",
+      "city",
+      "taxId",
+      "status",
+    ],
+    user: [
+      "tenantId",
+      "companyId",
+      "branchId",
+      "roleId",
+      "role",
+      "code",
+      "name",
+      "email",
+      "passwordHash",
+      "avatarUrl",
+      "status",
+    ],
     role: ["tenantId", "code", "name", "description", "isSystem", "status"],
   };
 
@@ -174,7 +293,9 @@ function sanitizePayloadForTable(entityName: string, payload: Record<string, any
 /**
  * Server Action to fetch records dynamically from Drizzle ORM PostgreSQL or Server Store.
  */
-export async function fetchRecordsAction(entityName: string): Promise<ActionResult> {
+export async function fetchRecordsAction(
+  entityName: string,
+): Promise<ActionResult> {
   const storeKey = getStoreKey(entityName);
   try {
     const table = getTableForEntity(entityName);
@@ -189,7 +310,10 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
         const warehouseCountMap = new Map<string, number>();
         warehouseList.forEach((w: any) => {
           if (w.branchId) {
-            warehouseCountMap.set(w.branchId, (warehouseCountMap.get(w.branchId) || 0) + 1);
+            warehouseCountMap.set(
+              w.branchId,
+              (warehouseCountMap.get(w.branchId) || 0) + 1,
+            );
           }
         });
 
@@ -197,7 +321,10 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
           status: "ACTIVE",
           ...r,
           companyId: r.companyId,
-          companyName: r.companyName || compMap.get(r.companyId) || "PT Lefatech Indonesia",
+          companyName:
+            r.companyName ||
+            compMap.get(r.companyId) ||
+            "PT Lefatech Indonesia",
           city: r.city || r.address || "",
           warehousesCount: warehouseCountMap.get(r.id) || 0,
         }));
@@ -210,24 +337,26 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
         const branchList = await db.select().from(schema.branches);
         const compMap = new Map(compList.map((c) => [c.id, c.name]));
         const branchMap = new Map(branchList.map((b) => [b.id, b.name]));
-        const memoryMap = new Map((serverDataStore["warehouse"] || []).map((w: any) => [w.id, w]));
 
-        const enriched = records.map((r: any) => {
-          const mem = memoryMap.get(r.id);
-          const cId = r.companyId || mem?.companyId;
-          const bId = r.branchId || mem?.branchId;
-          const capVal = mem?.capacityUtilization !== undefined ? Number(mem.capacityUtilization) : (r.capacityUtilization !== undefined ? Number(r.capacityUtilization) : 0);
-          return {
-            status: "ACTIVE",
-            ...r,
-            capacityUtilization: capVal,
-            companyId: cId,
-            branchId: bId,
-            companyName: r.companyName || compMap.get(cId) || mem?.companyName || (compList[0]?.name ?? "PT Lefatech Indonesia"),
-            branchName: r.branchName || branchMap.get(bId) || mem?.branchName || (branchList[0]?.name ?? "Jakarta Central HQ"),
-            location: r.location || r.address || mem?.location || "",
-          };
-        });
+        const enriched = records.map((r: any) => ({
+          status: "ACTIVE",
+          ...r,
+          capacityUtilization:
+            r.capacityUtilization !== undefined
+              ? Number(r.capacityUtilization)
+              : 0,
+          companyId: r.companyId,
+          branchId: r.branchId,
+          companyName:
+            r.companyName ||
+            compMap.get(r.companyId) ||
+            (compList[0]?.name ?? "PT Lefatech Indonesia"),
+          branchName:
+            r.branchName ||
+            branchMap.get(r.branchId) ||
+            (branchList[0]?.name ?? "Jakarta Central HQ"),
+          location: r.location || r.address || "",
+        }));
         return { success: true, data: enriched };
       }
 
@@ -247,14 +376,16 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
           if (w.name) whMap.set(w.name, w.name || w.code);
         });
 
-        const defaultWhName = whList && whList[0] ? whList[0].name : "Gudang Utama Jakarta";
-        const defaultCatName = catList && catList[0] ? (catList[0].name || catList[0].code) : "Hardware";
-        const memoryMap = new Map((serverDataStore["product"] || []).map((p: any) => [p.id, p]));
+        const defaultWhName =
+          whList && whList[0] ? whList[0].name : "Gudang Utama Jakarta";
+        const defaultCatName =
+          catList && catList[0]
+            ? catList[0].name || catList[0].code
+            : "Hardware";
 
         const enriched = records.map((r: any) => {
-          const mem = memoryMap.get(r.id);
-          const rawCat = r.categoryId || r.category || mem?.categoryId || mem?.category;
-          const rawWh = r.warehouseId || r.defaultWarehouse || mem?.warehouseId || mem?.defaultWarehouse;
+          const rawCat = r.categoryId || r.category;
+          const rawWh = r.warehouseId || r.defaultWarehouse;
           const resolvedCat = catMap.get(rawCat) || rawCat || defaultCatName;
           const resolvedWh = whMap.get(rawWh) || rawWh || defaultWhName;
           return {
@@ -287,12 +418,10 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
           if (r.name) roleMap.set(r.name, r.name);
         });
 
-        const memoryMap = new Map((serverDataStore["user"] || []).map((u: any) => [u.id, u]));
-
         const enriched = records.map((r: any) => {
-          const mem = memoryMap.get(r.id);
-          const rawRole = r.roleId || r.role || mem?.roleId || mem?.role || "Super Administrator";
-          const resolvedRole = roleMap.get(rawRole) || rawRole || "Super Administrator";
+          const rawRole = r.roleId || r.role || "Super Administrator";
+          const resolvedRole =
+            roleMap.get(rawRole) || rawRole || "Super Administrator";
           return {
             status: r.status || "ACTIVE",
             ...r,
@@ -301,8 +430,12 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
             role: resolvedRole,
             companyId: r.companyId,
             branchId: r.branchId,
-            companyName: r.companyName || compMap.get(r.companyId) || "PT Lefatech Indonesia",
-            branchName: r.branchName || branchMap.get(r.branchId) || "Jakarta Central HQ",
+            companyName:
+              r.companyName ||
+              compMap.get(r.companyId) ||
+              "PT Lefatech Indonesia",
+            branchName:
+              r.branchName || branchMap.get(r.branchId) || "Jakarta Central HQ",
           };
         });
         return { success: true, data: enriched };
@@ -314,7 +447,10 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
         const branchCountMap = new Map<string, number>();
         branchList.forEach((b: any) => {
           if (b.companyId) {
-            branchCountMap.set(b.companyId, (branchCountMap.get(b.companyId) || 0) + 1);
+            branchCountMap.set(
+              b.companyId,
+              (branchCountMap.get(b.companyId) || 0) + 1,
+            );
           }
         });
 
@@ -335,18 +471,16 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
           permCountMap.set(p.roleId, (permCountMap.get(p.roleId) || 0) + acts);
         });
 
-        const memoryMap = new Map((serverDataStore["role"] || []).map((r: any) => [r.id, r]));
-
         const enriched = records.map((r: any) => {
-          const mem = memoryMap.get(r.id);
-          const pCount = permCountMap.get(r.id) !== undefined && permCountMap.get(r.id)! > 0
-            ? permCountMap.get(r.id)!
-            : (mem?.permissionsCount !== undefined ? mem.permissionsCount : (r.permissionsCount || 18));
+          const pCount =
+            permCountMap.get(r.id) !== undefined && permCountMap.get(r.id)! > 0
+              ? permCountMap.get(r.id)!
+              : r.permissionsCount || 18;
           return {
             status: "ACTIVE",
             ...r,
             permissionsCount: pCount,
-            permissions: mem?.permissions || r.permissions,
+            permissions: r.permissions,
           };
         });
         return { success: true, data: enriched };
@@ -355,14 +489,14 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
       return { success: true, data: records };
     }
   } catch (err: any) {
-    console.warn(`[Drizzle ORM Fetch ${entityName}] Using dynamic server store:`, err?.message || err);
+    console.error(
+      `[Drizzle ORM Fetch ${entityName} Error]:`,
+      err?.message || err,
+    );
+    return { success: false, error: err?.message || "Failed to fetch records" };
   }
 
-  const currentStore = serverDataStore[storeKey] || [];
-  return {
-    success: true,
-    data: [...currentStore],
-  };
+  return { success: true, data: [] };
 }
 
 /**
@@ -370,13 +504,15 @@ export async function fetchRecordsAction(entityName: string): Promise<ActionResu
  */
 export async function createRecordAction(
   entityName: string,
-  formData: Record<string, any>
+  formData: Record<string, any>,
 ): Promise<ActionResult> {
   const storeKey = getStoreKey(entityName);
   const newItemId = `${storeKey}-${Date.now()}`;
   const newItem: Record<string, any> = {
     id: newItemId,
-    code: formData.code || `${entityName.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    code:
+      formData.code ||
+      `${entityName.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
     status: formData.status || "ACTIVE",
     ...formData,
     createdAt: new Date().toISOString(),
@@ -401,7 +537,13 @@ export async function createRecordAction(
       if (formData.roleId) insertPayload.roleId = formData.roleId;
 
       // Automatically resolve companyId if not provided
-      const requiresCompanyId = ["branch", "warehouse", "product", "customer", "supplier"].includes(storeKey);
+      const requiresCompanyId = [
+        "branch",
+        "warehouse",
+        "product",
+        "customer",
+        "supplier",
+      ].includes(storeKey);
       if (requiresCompanyId && !insertPayload.companyId) {
         if (formData.companyName) {
           const matchingComp = await db
@@ -419,7 +561,11 @@ export async function createRecordAction(
       }
 
       // Automatically resolve branchId if not provided
-      if (storeKey === "warehouse" && !insertPayload.branchId && insertPayload.companyId) {
+      if (
+        storeKey === "warehouse" &&
+        !insertPayload.branchId &&
+        insertPayload.companyId
+      ) {
         if (formData.branchName) {
           const matchingBr = await db
             .select()
@@ -431,37 +577,47 @@ export async function createRecordAction(
           }
         }
         if (!insertPayload.branchId) {
-          insertPayload.branchId = await getDefaultBranchId(tenantId, insertPayload.companyId);
+          insertPayload.branchId = await getDefaultBranchId(
+            tenantId,
+            insertPayload.companyId,
+          );
         }
       }
 
       // Automatically resolve passwordHash for user
       if (storeKey === "user") {
-        insertPayload.passwordHash = formData.password || formData.passwordHash || "$2a$10$defaultHashForUser1234567890";
+        insertPayload.passwordHash =
+          formData.password ||
+          formData.passwordHash ||
+          "$2a$10$defaultHashForUser1234567890";
       }
 
       // Automatically fill code and sku for product
       if (storeKey === "product") {
-        insertPayload.code = insertPayload.code || insertPayload.sku || `PRD-${Date.now()}`;
+        insertPayload.code =
+          insertPayload.code || insertPayload.sku || `PRD-${Date.now()}`;
         insertPayload.sku = insertPayload.sku || insertPayload.code;
         if (formData.categoryId) insertPayload.category = formData.categoryId;
       }
 
-      const sanitizedPayload = sanitizePayloadForTable(entityName, insertPayload);
-      const insertedRecords = (await db.insert(table as any).values(sanitizedPayload).returning()) as any[];
+      const sanitizedPayload = sanitizePayloadForTable(
+        entityName,
+        insertPayload,
+      );
+      const insertedRecords = (await db
+        .insert(table as any)
+        .values(sanitizedPayload)
+        .returning()) as any[];
       if (Array.isArray(insertedRecords) && insertedRecords.length > 0) {
         newItem.id = insertedRecords[0].id;
       }
     }
   } catch (dbErr: any) {
-    console.error(`[Drizzle ORM Insert ${entityName} Error]:`, dbErr?.message || dbErr);
+    console.error(
+      `[Drizzle ORM Insert ${entityName} Error]:`,
+      dbErr?.message || dbErr,
+    );
   }
-
-  // Update Server-side dynamic store
-  if (!serverDataStore[storeKey]) {
-    serverDataStore[storeKey] = [];
-  }
-  serverDataStore[storeKey].unshift(newItem);
 
   // Server-side audit trail log
   await logAuditEvent({
@@ -485,9 +641,8 @@ export async function createRecordAction(
 export async function updateRecordAction(
   entityName: string,
   id: string,
-  formData: Record<string, any>
+  formData: Record<string, any>,
 ): Promise<ActionResult> {
-  const storeKey = getStoreKey(entityName);
   const updatePayload: Record<string, any> = { ...formData };
 
   // Map pure ID fields to SQL columns
@@ -524,7 +679,10 @@ export async function updateRecordAction(
         }
       }
 
-      const sanitizedPayload = sanitizePayloadForTable(entityName, updatePayload);
+      const sanitizedPayload = sanitizePayloadForTable(
+        entityName,
+        updatePayload,
+      );
       if (Object.keys(sanitizedPayload).length > 0) {
         await db
           .update(table as any)
@@ -536,11 +694,15 @@ export async function updateRecordAction(
       }
     }
   } catch (dbErr: any) {
-    console.error(`[Drizzle ORM Update ${entityName} Error]:`, dbErr?.message || dbErr);
+    console.error(
+      `[Drizzle ORM Update ${entityName} Error]:`,
+      dbErr?.message || dbErr,
+    );
   }
 
   if (formData.isHeadquarters !== undefined) {
-    const isHqBool = formData.isHeadquarters === true || formData.isHeadquarters === "true";
+    const isHqBool =
+      formData.isHeadquarters === true || formData.isHeadquarters === "true";
     formData.isHeadquarters = isHqBool;
     updatePayload.isHeadquarters = isHqBool;
   }
@@ -549,16 +711,12 @@ export async function updateRecordAction(
     id,
     ...formData,
     ...updatePayload,
-    isHeadquarters: formData.isHeadquarters !== undefined ? (formData.isHeadquarters === true || formData.isHeadquarters === "true") : updatePayload.isHeadquarters,
+    isHeadquarters:
+      formData.isHeadquarters !== undefined
+        ? formData.isHeadquarters === true || formData.isHeadquarters === "true"
+        : updatePayload.isHeadquarters,
     updatedAt: new Date().toISOString(),
   };
-
-  // Update Server-side dynamic store
-  if (serverDataStore[storeKey]) {
-    serverDataStore[storeKey] = serverDataStore[storeKey].map((item) =>
-      item.id === id ? { ...item, ...finalPayload } : item
-    );
-  }
 
   // Server-side audit trail log
   await logAuditEvent({
@@ -581,10 +739,8 @@ export async function updateRecordAction(
  */
 export async function deleteRecordAction(
   entityName: string,
-  id: string
+  id: string,
 ): Promise<ActionResult> {
-  const storeKey = getStoreKey(entityName);
-
   // Attempt Drizzle ORM delete
   try {
     const table = getTableForEntity(entityName);
@@ -592,12 +748,10 @@ export async function deleteRecordAction(
       await db.delete(table as any).where(eq((table as any).id, id));
     }
   } catch (dbErr: any) {
-    console.error(`[Drizzle ORM Delete ${entityName} Error]:`, dbErr?.message || dbErr);
-  }
-
-  // Update Server-side dynamic store
-  if (serverDataStore[storeKey]) {
-    serverDataStore[storeKey] = serverDataStore[storeKey].filter((item) => item.id !== id);
+    console.error(
+      `[Drizzle ORM Delete ${entityName} Error]:`,
+      dbErr?.message || dbErr,
+    );
   }
 
   // Server-side audit trail log
@@ -620,7 +774,7 @@ export async function deleteRecordAction(
  */
 export async function updateRolePermissionsAction(
   roleId: string,
-  permissions: Record<string, string[]>
+  permissions: Record<string, string[]>,
 ): Promise<ActionResult> {
   try {
     const tenantId = await getDefaultTenantId();
@@ -631,7 +785,9 @@ export async function updateRolePermissionsAction(
 
     // 1. Drizzle ORM PostgreSQL update/insert for permissions table
     try {
-      await db.delete(schema.permissions).where(eq(schema.permissions.roleId, roleId));
+      await db
+        .delete(schema.permissions)
+        .where(eq(schema.permissions.roleId, roleId));
       const insertValues = Object.entries(permissions)
         .filter(([_, actions]) => actions && actions.length > 0)
         .map(([moduleName, actions]) => ({
@@ -650,31 +806,13 @@ export async function updateRolePermissionsAction(
         .set({ updatedAt: new Date() })
         .where(eq(schema.roles.id, roleId));
     } catch (dbErr: any) {
-      console.warn("[Drizzle ORM Update Role Permissions Warning]:", dbErr?.message || dbErr);
+      console.warn(
+        "[Drizzle ORM Update Role Permissions Warning]:",
+        dbErr?.message || dbErr,
+      );
     }
 
-    // 2. Update dynamic serverDataStore fallback
-    if (!serverDataStore["role"]) {
-      serverDataStore["role"] = [];
-    }
-    const existingIndex = serverDataStore["role"].findIndex((r: any) => r.id === roleId);
-    if (existingIndex >= 0) {
-      serverDataStore["role"][existingIndex] = {
-        ...serverDataStore["role"][existingIndex],
-        permissions,
-        permissionsCount: totalCount,
-        updatedAt: new Date().toISOString(),
-      };
-    } else {
-      serverDataStore["role"].unshift({
-        id: roleId,
-        permissions,
-        permissionsCount: totalCount,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
-    // 3. Server-side audit log
+    // 2. Server-side audit log
     await logAuditEvent({
       tenantId: "tnt_acme_corp",
       action: "UPDATE",
@@ -697,11 +835,16 @@ export async function updateRolePermissionsAction(
 /**
  * Server Action for fetching fine-grained Role Permissions Matrix from PostgreSQL or memory store.
  */
-export async function fetchRolePermissionsAction(roleId: string): Promise<ActionResult> {
+export async function fetchRolePermissionsAction(
+  roleId: string,
+): Promise<ActionResult> {
   try {
     const table = schema.permissions;
     if (table) {
-      const perms = await db.select().from(table).where(eq(schema.permissions.roleId, roleId));
+      const perms = await db
+        .select()
+        .from(table)
+        .where(eq(schema.permissions.roleId, roleId));
       if (perms && perms.length > 0) {
         const permMap: Record<string, string[]> = {};
         perms.forEach((p: any) => {
@@ -713,12 +856,11 @@ export async function fetchRolePermissionsAction(roleId: string): Promise<Action
       }
     }
   } catch (err: any) {
-    console.warn("[fetchRolePermissionsAction] Fallback to memory store:", err?.message || err);
-  }
-
-  const memoryRole = (serverDataStore["role"] || []).find((r: any) => r.id === roleId);
-  if (memoryRole && memoryRole.permissions) {
-    return { success: true, data: memoryRole.permissions };
+    console.error("[fetchRolePermissionsAction] Error:", err?.message || err);
+    return {
+      success: false,
+      error: err?.message || "Failed to fetch permissions",
+    };
   }
 
   return { success: true, data: null };
@@ -728,31 +870,18 @@ export async function fetchRolePermissionsAction(roleId: string): Promise<Action
  * Server Action: Resolve current logged-in user from nexus_session cookie,
  * look up their role, and return their permission state for a given pageKey.
  */
-export async function getSessionPermissionsAction(pageKey: string): Promise<ActionResult> {
+export async function getSessionPermissionsAction(
+  pageKey: string,
+): Promise<ActionResult> {
   try {
-    // 1. Read nexus_session cookie to get user ID
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("nexus_session");
+    // Resolve the logged-in user from the server-side session cookie.
+    const user = await getSessionUser();
 
-    if (!sessionCookie || !sessionCookie.value) {
-      return { success: false, error: "No session cookie found" };
+    if (!user) {
+      return { success: false, error: "No valid session found" };
     }
 
-    // Cookie format: "lefatech_token_{userId}"
-    const userId = sessionCookie.value.replace("lefatech_token_", "");
-    if (!userId) {
-      return { success: false, error: "Invalid session cookie format" };
-    }
-
-    // 2. Query user record from DB
-    const [userRecord] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, userId));
-
-    if (!userRecord) {
-      return { success: false, error: "User not found in database" };
-    }
+    const userRecord = user;
 
     // Query user context (Company, Branch, Warehouse, Tenant)
     let companyName = "PT Lefatech Indonesia";
@@ -761,15 +890,24 @@ export async function getSessionPermissionsAction(pageKey: string): Promise<Acti
     let tenantCode = "LEFATECH-GLOBAL";
 
     if (userRecord.companyId) {
-      const [cmp] = await db.select().from(schema.companies).where(eq(schema.companies.id, userRecord.companyId));
+      const [cmp] = await db
+        .select()
+        .from(schema.companies)
+        .where(eq(schema.companies.id, userRecord.companyId));
       if (cmp) companyName = cmp.name;
     }
     if (userRecord.branchId) {
-      const [brn] = await db.select().from(schema.branches).where(eq(schema.branches.id, userRecord.branchId));
+      const [brn] = await db
+        .select()
+        .from(schema.branches)
+        .where(eq(schema.branches.id, userRecord.branchId));
       if (brn) branchName = brn.name;
     }
     if (userRecord.tenantId) {
-      const [tnt] = await db.select().from(schema.tenants).where(eq(schema.tenants.id, userRecord.tenantId));
+      const [tnt] = await db
+        .select()
+        .from(schema.tenants)
+        .where(eq(schema.tenants.id, userRecord.tenantId));
       if (tnt) tenantCode = tnt.code;
     }
 
@@ -793,8 +931,9 @@ export async function getSessionPermissionsAction(pageKey: string): Promise<Acti
       }
     } else {
       // No roleId assigned — check legacy role column
-      isSuperAdmin =
-        (userRecord.role || "").toLowerCase().includes("super admin");
+      isSuperAdmin = (userRecord.role || "")
+        .toLowerCase()
+        .includes("super admin");
       if (isSuperAdmin) roleCode = "SUPER_ADMIN";
     }
 
@@ -886,26 +1025,13 @@ export async function getSessionPermissionsAction(pageKey: string): Promise<Acti
  */
 export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("nexus_session");
+    const user = await getSessionUser();
 
-    if (!sessionCookie || !sessionCookie.value) {
-      return { success: false, error: "No session cookie" };
+    if (!user) {
+      return { success: false, error: "No valid session cookie" };
     }
 
-    const userId = sessionCookie.value.replace("lefatech_token_", "");
-    if (!userId) {
-      return { success: false, error: "Invalid session cookie" };
-    }
-
-    const [userRecord] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, userId));
-
-    if (!userRecord) {
-      return { success: false, error: "User not found" };
-    }
+    const userRecord = user;
 
     let companyName = "PT Lefatech Indonesia";
     let branchName = "Lefatech Head Office Jakarta";
@@ -913,15 +1039,24 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
     let tenantCode = "LEFATECH-GLOBAL";
 
     if (userRecord.companyId) {
-      const [cmp] = await db.select().from(schema.companies).where(eq(schema.companies.id, userRecord.companyId));
+      const [cmp] = await db
+        .select()
+        .from(schema.companies)
+        .where(eq(schema.companies.id, userRecord.companyId));
       if (cmp) companyName = cmp.name;
     }
     if (userRecord.branchId) {
-      const [brn] = await db.select().from(schema.branches).where(eq(schema.branches.id, userRecord.branchId));
+      const [brn] = await db
+        .select()
+        .from(schema.branches)
+        .where(eq(schema.branches.id, userRecord.branchId));
       if (brn) branchName = brn.name;
     }
     if (userRecord.tenantId) {
-      const [tnt] = await db.select().from(schema.tenants).where(eq(schema.tenants.id, userRecord.tenantId));
+      const [tnt] = await db
+        .select()
+        .from(schema.tenants)
+        .where(eq(schema.tenants.id, userRecord.tenantId));
       if (tnt) tenantCode = tnt.code;
     }
 
@@ -943,7 +1078,9 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
           roleName.toLowerCase().includes("super admin");
       }
     } else {
-      isSuperAdmin = (userRecord.role || "").toLowerCase().includes("super admin");
+      isSuperAdmin = (userRecord.role || "")
+        .toLowerCase()
+        .includes("super admin");
       if (isSuperAdmin) roleCode = "SUPER_ADMIN";
     }
 
@@ -975,7 +1112,14 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
         "sys_roles",
         "sys_audit",
       ].forEach((m) => {
-        fullPermsMap[m] = ["read", "create", "update", "delete", "approve", "export"];
+        fullPermsMap[m] = [
+          "read",
+          "create",
+          "update",
+          "delete",
+          "approve",
+          "export",
+        ];
       });
 
       return {
@@ -1008,7 +1152,10 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
       data: { ...contextData, permissionsMap },
     };
   } catch (err: any) {
-    console.error("[getSessionAllPermissionsAction] Error:", err?.message || err);
+    console.error(
+      "[getSessionAllPermissionsAction] Error:",
+      err?.message || err,
+    );
     return { success: false, error: err?.message || "Failed" };
   }
 }
@@ -1018,18 +1165,19 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
  */
 export async function getUserThemeAction(): Promise<ActionResult> {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("nexus_session");
+    const user = await getSessionUser();
 
-    if (!sessionCookie || !sessionCookie.value) {
+    if (!user) {
       return { success: true, data: { theme: "light" } };
     }
 
-    const userId = sessionCookie.value.replace("lefatech_token_", "");
     const [userRecord] = await db
-      .select({ themePreference: schema.users.themePreference, id: schema.users.id })
+      .select({
+        themePreference: schema.users.themePreference,
+        id: schema.users.id,
+      })
       .from(schema.users)
-      .where(eq(schema.users.id, userId));
+      .where(eq(schema.users.id, user.id));
 
     return {
       success: true,
@@ -1046,23 +1194,23 @@ export async function getUserThemeAction(): Promise<ActionResult> {
 /**
  * Server Action: Update and save the logged in user's theme preference in DB
  */
-export async function updateUserThemeAction(theme: "light" | "dark"): Promise<ActionResult> {
+export async function updateUserThemeAction(
+  theme: "light" | "dark",
+): Promise<ActionResult> {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("nexus_session");
+    const user = await getSessionUser();
 
-    if (!sessionCookie || !sessionCookie.value) {
+    if (!user) {
       return { success: false, error: "No session found" };
     }
 
-    const userId = sessionCookie.value.replace("lefatech_token_", "");
     await db
       .update(schema.users)
       .set({
         themePreference: theme,
         updatedAt: new Date(),
       })
-      .where(eq(schema.users.id, userId));
+      .where(eq(schema.users.id, user.id));
 
     return {
       success: true,

@@ -13,11 +13,34 @@ import {
 import { relations } from "drizzle-orm";
 
 // Enums
-export const tenantPlanEnum = pgEnum("TenantPlan", ["STARTER", "GROWTH", "ENTERPRISE"]);
-export const tenantStatusEnum = pgEnum("TenantStatus", ["ACTIVE", "SUSPENDED", "CANCELLED"]);
-export const userStatusEnum = pgEnum("UserStatus", ["ACTIVE", "INACTIVE", "BLOCKED"]);
-export const productTypeEnum = pgEnum("ProductType", ["GOODS", "SERVICE", "RAW_MATERIAL"]);
-export const auditActionEnum = pgEnum("AuditAction", ["CREATE", "UPDATE", "DELETE", "APPROVE", "POST", "CANCEL"]);
+export const tenantPlanEnum = pgEnum("TenantPlan", [
+  "STARTER",
+  "GROWTH",
+  "ENTERPRISE",
+]);
+export const tenantStatusEnum = pgEnum("TenantStatus", [
+  "ACTIVE",
+  "SUSPENDED",
+  "CANCELLED",
+]);
+export const userStatusEnum = pgEnum("UserStatus", [
+  "ACTIVE",
+  "INACTIVE",
+  "BLOCKED",
+]);
+export const productTypeEnum = pgEnum("ProductType", [
+  "GOODS",
+  "SERVICE",
+  "RAW_MATERIAL",
+]);
+export const auditActionEnum = pgEnum("AuditAction", [
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "APPROVE",
+  "POST",
+  "CANCEL",
+]);
 
 // 1. Tenants Table
 export const tenants = pgTable("tenants", {
@@ -34,9 +57,14 @@ export const tenants = pgTable("tenants", {
 // 2. Site Settings Table (Multi-Tenant Scoped)
 export const siteSettings = pgTable("site_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull().unique(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
   siteName: varchar("site_name", { length: 255 }).default("Flex ERP").notNull(),
-  siteTitle: varchar("site_title", { length: 255 }).default("Flex ERP Enterprise Platform"),
+  siteTitle: varchar("site_title", { length: 255 }).default(
+    "Flex ERP Enterprise Platform",
+  ),
   logoUrl: varchar("logo_url", { length: 255 }),
   faviconUrl: varchar("favicon_url", { length: 255 }),
   primaryColor: varchar("primary_color", { length: 50 }).default("#3b82f6"),
@@ -54,7 +82,9 @@ export const siteSettings = pgTable("site_settings", {
 // 3. Companies Table
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   taxId: varchar("tax_id", { length: 255 }),
@@ -72,8 +102,12 @@ export const companies = pgTable("companies", {
 // 4. Branches Table
 export const branches = pgTable("branches", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }),
@@ -86,9 +120,15 @@ export const branches = pgTable("branches", {
 // 5. Warehouses Table
 export const warehouses = pgTable("warehouses", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
-  branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
+  branchId: uuid("branch_id").references(() => branches.id, {
+    onDelete: "set null",
+  }),
   name: varchar("name", { length: 255 }).notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   location: varchar("location", { length: 255 }),
@@ -100,9 +140,15 @@ export const warehouses = pgTable("warehouses", {
 // 6. Users Table
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
-  branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id").references(() => companies.id, {
+    onDelete: "set null",
+  }),
+  branchId: uuid("branch_id").references(() => branches.id, {
+    onDelete: "set null",
+  }),
   roleId: uuid("role_id").references(() => roles.id, { onDelete: "set null" }),
   role: varchar("role", { length: 255 }),
   email: varchar("email", { length: 255 }).notNull().unique(),
@@ -116,11 +162,29 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
-// 7. Customers Table
+// 7. Sessions Table (Auth: random token -> user, with expiry & revoke support)
+export const sessions = pgTable("sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  userId: uuid("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  userAgent: text("user_agent"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// 8. Customers Table
 export const customers = pgTable("customers", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }),
@@ -129,8 +193,13 @@ export const customers = pgTable("customers", {
   address: varchar("address", { length: 255 }),
   city: varchar("city", { length: 255 }),
   country: varchar("country", { length: 50 }).default("ID"),
-  creditLimit: numeric("credit_limit", { precision: 15, scale: 2 }).default("0"),
-  balanceOutstanding: numeric("balance_outstanding", { precision: 15, scale: 2 }).default("0"),
+  creditLimit: numeric("credit_limit", { precision: 15, scale: 2 }).default(
+    "0",
+  ),
+  balanceOutstanding: numeric("balance_outstanding", {
+    precision: 15,
+    scale: 2,
+  }).default("0"),
   paymentTerms: integer("payment_terms").default(30),
   status: varchar("status", { length: 50 }).default("ACTIVE"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -140,8 +209,12 @@ export const customers = pgTable("customers", {
 // 8. Suppliers Table
 export const suppliers = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }),
@@ -159,8 +232,12 @@ export const suppliers = pgTable("suppliers", {
 // 9. Products Table
 export const products = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   sku: varchar("sku", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -168,9 +245,15 @@ export const products = pgTable("products", {
   type: productTypeEnum("type").default("GOODS"),
   unit: varchar("unit", { length: 50 }).default("PCS"),
   costPrice: numeric("cost_price", { precision: 15, scale: 2 }).default("0"),
-  sellingPrice: numeric("selling_price", { precision: 15, scale: 2 }).default("0"),
-  stockOnHand: numeric("stock_on_hand", { precision: 15, scale: 2 }).default("0"),
-  reorderLevel: numeric("reorder_level", { precision: 15, scale: 2 }).default("0"),
+  sellingPrice: numeric("selling_price", { precision: 15, scale: 2 }).default(
+    "0",
+  ),
+  stockOnHand: numeric("stock_on_hand", { precision: 15, scale: 2 }).default(
+    "0",
+  ),
+  reorderLevel: numeric("reorder_level", { precision: 15, scale: 2 }).default(
+    "0",
+  ),
   status: varchar("status", { length: 50 }).default("ACTIVE"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -179,7 +262,9 @@ export const products = pgTable("products", {
 // 10. Audit Logs Table
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
   action: auditActionEnum("action").notNull(),
   entity: varchar("entity", { length: 255 }).notNull(),
@@ -194,7 +279,9 @@ export const auditLogs = pgTable("audit_logs", {
 // 11. Product Categories Table
 export const productCategories = pgTable("product_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -206,7 +293,9 @@ export const productCategories = pgTable("product_categories", {
 // 12. Roles Table
 export const roles = pgTable("roles", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -219,8 +308,12 @@ export const roles = pgTable("roles", {
 // 13. Role Permissions Matrix Table
 export const permissions = pgTable("permissions", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  roleId: uuid("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
+  roleId: uuid("role_id")
+    .references(() => roles.id, { onDelete: "cascade" })
+    .notNull(),
   module: varchar("module", { length: 100 }).notNull(),
   actions: json("actions").$type<string[]>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -230,7 +323,9 @@ export const permissions = pgTable("permissions", {
 // 14. Units Table (Master Satuan Barang)
 export const units = pgTable("units", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   symbol: varchar("symbol", { length: 20 }),
@@ -242,7 +337,9 @@ export const units = pgTable("units", {
 // 15. Taxes Table (Master Pajak)
 export const taxes = pgTable("taxes", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  tenantId: uuid("tenant_id")
+    .references(() => tenants.id, { onDelete: "cascade" })
+    .notNull(),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   rate: numeric("rate", { precision: 5, scale: 2 }).notNull().default("11.00"),
@@ -251,7 +348,6 @@ export const taxes = pgTable("taxes", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
-
 
 // -----------------------------------------------------------------------------
 // Drizzle Relational Queries Definitions (Official Drizzle ORM Best Practice)

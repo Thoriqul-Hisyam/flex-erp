@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useActionState } from "react";
 import {
   Lock,
   Mail,
@@ -12,52 +12,27 @@ import {
   X,
 } from "lucide-react";
 import { useSiteSettings } from "@/components/providers/site-settings-provider";
+import { loginAction, LoginActionResult } from "@/app/actions/auth-actions";
 
 export default function FlexERPLoginPage() {
-  const router = useRouter();
   const { settings } = useSiteSettings();
-  const [email, setEmail] = React.useState("admin@lefatech.co.id");
-  const [password, setPassword] = React.useState("Password123!");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [logoError, setLogoError] = React.useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setIsLoading(true);
+  // Server action drives authentication (no client-side API fetch).
+  const [state, formAction, isPending] = useActionState<
+    LoginActionResult | null,
+    FormData
+  >(loginAction, null);
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setIsLoading(false);
-        setErrorMessage(data.message || "Email atau kata sandi salah.");
-        return;
-      }
-
-      setIsLoading(false);
-      router.push("/");
-      router.refresh();
-    } catch (err) {
-      setIsLoading(false);
-      setErrorMessage("Terjadi masalah koneksi. Coba lagi nanti.");
-    }
-  };
-
+  const errorMessage = state?.message || null;
   const primaryColor = settings.primaryColor || "#0088ff";
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[#eceff4] dark:bg-[#090c10] p-4 sm:p-6 lg:p-8">
       <div className="flex w-full max-w-[960px] min-h-[640px] rounded-[24px] overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.06)] border border-[#e6e9f0] dark:border-slate-800">
-
         {/* ─── LEFT: Mascot Illustration Panel ─── */}
         <div
           className="hidden md:flex md:w-[45%] lg:w-[48%] relative rounded-[24px] m-2 overflow-hidden"
@@ -111,14 +86,12 @@ export default function FlexERPLoginPage() {
 
         {/* ─── RIGHT: Login Form Panel ─── */}
         <div className="w-full md:w-[55%] lg:w-[52%] bg-white dark:bg-[#12161f] flex flex-col justify-center items-center px-8 sm:px-12 lg:px-16 py-10 relative">
-
           {/* Close button (top right, decorative) */}
           <button className="absolute top-5 right-5 text-[#8a94a6] hover:text-[#0f172a] dark:hover:text-white transition-colors">
             <X className="h-6 w-6" />
           </button>
 
           <div className="w-full max-w-sm space-y-7">
-
             {/* Mobile-only brand */}
             <div className="md:hidden flex justify-center mb-2">
               <span
@@ -144,8 +117,8 @@ export default function FlexERPLoginPage() {
               </div>
             )}
 
-            {/* Form */}
-            <form onSubmit={handleLogin} className="space-y-5">
+            {/* Form — submits to the server loginAction */}
+            <form action={formAction} className="space-y-5">
               {/* Email */}
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-[#0f172a] dark:text-slate-200">
@@ -157,6 +130,7 @@ export default function FlexERPLoginPage() {
                   </div>
                   <input
                     type="email"
+                    name="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="nama@perusahaan.co.id"
@@ -185,6 +159,7 @@ export default function FlexERPLoginPage() {
                   </button>
                   <input
                     type={showPassword ? "text" : "password"}
+                    name="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -197,14 +172,14 @@ export default function FlexERPLoginPage() {
               {/* Submit */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isPending}
                 className="w-full h-12 rounded-xl text-white font-bold text-sm cursor-pointer transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2 mt-2"
                 style={{
                   backgroundColor: primaryColor,
                   boxShadow: "0 4px 14px rgba(0, 136, 255, 0.25)",
                 }}
               >
-                {isLoading ? (
+                {isPending ? (
                   <div className="flex items-center justify-center gap-2.5">
                     <div className="h-4 w-4 rounded-full bg-white/30 animate-pulse" />
                     <div className="h-3.5 w-32 rounded-full bg-white/40 animate-pulse" />

@@ -136,7 +136,7 @@ export default function RolesPermissionsPage() {
           className="h-7 text-xs rounded-full border-[#0088ff]/40 text-[#0088ff] hover:bg-[#f0f7ff] dark:hover:bg-blue-950/50 gap-1.5 cursor-pointer font-medium"
         >
           <ShieldCheck className="h-3.5 w-3.5 text-[#0088ff]" />
-          Configure Matrix <ArrowRight className="h-3 w-3" />
+          Pengaturan Permission <ArrowRight className="h-3 w-3" />
         </Button>
       ),
     },

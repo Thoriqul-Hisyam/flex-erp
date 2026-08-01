@@ -24,18 +24,16 @@ import {
   UserCheck,
   Layers,
 } from "lucide-react";
-import { defaultSession } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
 import { usePermission } from "@/lib/auth/use-permission";
 
 export default function PRDUVentraDashboardPage() {
   const permission = usePermission("dashboard");
-
-  const displayName = permission.userName || defaultSession.user.name;
+  const displayName = permission.userName || "";
   const firstName = displayName.split(" ")[0];
-  const displayCompany = permission.companyName || defaultSession.context.companyName;
-  const displayBranch = permission.branchName || defaultSession.context.branchName;
-  const displayTenant = permission.tenantCode || defaultSession.context.tenantCode;
+  const displayCompany = permission.companyName || "";
+  const displayBranch = permission.branchName || "";
+  const displayTenant = permission.tenantCode || "";
 
   return (
     <div className="space-y-6">
@@ -47,7 +45,9 @@ export default function PRDUVentraDashboardPage() {
             <span className="rounded-full bg-[#f0f7ff] dark:bg-blue-950/60 px-2.5 py-0.5 text-[10px] font-mono font-bold text-[#0088ff] dark:text-blue-400 border border-[#0088ff]/20">
               {displayTenant}
             </span>
-            <span className="text-xs text-[#8a94a6] font-medium">Sistem ERP Terintegrasi</span>
+            <span className="text-xs text-[#8a94a6] font-medium">
+              Sistem ERP Terintegrasi
+            </span>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-[#0f172a] dark:text-white">
             Selamat Datang, {firstName} !
@@ -78,7 +78,9 @@ export default function PRDUVentraDashboardPage() {
                   <TrendingUp className="h-3 w-3" /> 35%
                 </span>
               </div>
-              <span className="text-[10px] text-[#8a94a6] font-medium">Across 4 Warehouses</span>
+              <span className="text-[10px] text-[#8a94a6] font-medium">
+                Across 4 Warehouses
+              </span>
             </div>
           </div>
 
@@ -101,7 +103,9 @@ export default function PRDUVentraDashboardPage() {
                   <TrendingUp className="h-3 w-3" /> 40%
                 </span>
               </div>
-              <span className="text-[10px] text-[#8a94a6] font-medium">FIFO Valuation Ledger</span>
+              <span className="text-[10px] text-[#8a94a6] font-medium">
+                FIFO Valuation Ledger
+              </span>
             </div>
           </div>
 
@@ -124,7 +128,9 @@ export default function PRDUVentraDashboardPage() {
                   <TrendingDown className="h-3 w-3" /> 50%
                 </span>
               </div>
-              <span className="text-[10px] text-[#8a94a6] font-medium">Reorder threshold reached</span>
+              <span className="text-[10px] text-[#8a94a6] font-medium">
+                Reorder threshold reached
+              </span>
             </div>
           </div>
         </div>
@@ -140,21 +146,29 @@ export default function PRDUVentraDashboardPage() {
               <h2 className="text-base font-bold text-[#0f172a] dark:text-white">
                 Inventory Statistics
               </h2>
-              <p className="text-xs text-[#8a94a6]">Multi-Warehouse physical stock receipts vs dispatch ledgers</p>
+              <p className="text-xs text-[#8a94a6]">
+                Multi-Warehouse physical stock receipts vs dispatch ledgers
+              </p>
             </div>
 
             <div className="flex items-center gap-5 text-xs font-semibold">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#f59e0b]" />
-                <span className="text-[#0f172a] dark:text-slate-300">Stock in</span>
+                <span className="text-[#0f172a] dark:text-slate-300">
+                  Stock in
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#8a2be2]" />
-                <span className="text-[#0f172a] dark:text-slate-300">Stock Out</span>
+                <span className="text-[#0f172a] dark:text-slate-300">
+                  Stock Out
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#0088ff]" />
-                <span className="text-[#0f172a] dark:text-slate-300">Stock Value</span>
+                <span className="text-[#0f172a] dark:text-slate-300">
+                  Stock Value
+                </span>
               </div>
 
               {/* Time Selector Dropdown */}
@@ -170,10 +184,18 @@ export default function PRDUVentraDashboardPage() {
           <div className="relative h-64 w-full flex flex-col justify-end pt-10">
             {/* Y-Axis Grid Lines */}
             <div className="absolute inset-0 flex flex-col justify-between text-[11px] font-mono text-[#8a94a6] pointer-events-none pb-6">
-              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">40k</div>
-              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">30k</div>
-              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">20k</div>
-              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">10k</div>
+              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">
+                40k
+              </div>
+              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">
+                30k
+              </div>
+              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">
+                20k
+              </div>
+              <div className="border-b border-dashed border-[#e6e9f0] dark:border-slate-800/80 pb-1">
+                10k
+              </div>
               <div className="pb-1">0k</div>
             </div>
 
@@ -186,7 +208,9 @@ export default function PRDUVentraDashboardPage() {
                     <div className="w-2.5 bg-[#8a2be2] rounded-full h-[60%]" />
                     <div className="w-2.5 bg-[#0088ff]/30 rounded-full h-[50%]" />
                   </div>
-                  <span className="text-[11px] font-medium text-[#8a94a6]">{m}</span>
+                  <span className="text-[11px] font-medium text-[#8a94a6]">
+                    {m}
+                  </span>
                 </div>
               ))}
 
@@ -195,8 +219,12 @@ export default function PRDUVentraDashboardPage() {
                 <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-xl shadow-lg border border-[#e6e9f0] dark:border-slate-700 flex items-center gap-1.5 whitespace-nowrap z-20">
                   <span className="h-2 w-2 rounded-full bg-[#0088ff]" />
                   <div className="text-[10px] leading-tight">
-                    <span className="text-[#8a94a6] block font-medium">Stock value</span>
-                    <span className="font-bold text-[#0f172a] dark:text-white font-mono">{formatCurrency(375340000)}</span>
+                    <span className="text-[#8a94a6] block font-medium">
+                      Stock value
+                    </span>
+                    <span className="font-bold text-[#0f172a] dark:text-white font-mono">
+                      {formatCurrency(375340000)}
+                    </span>
                   </div>
                 </div>
 
@@ -207,7 +235,9 @@ export default function PRDUVentraDashboardPage() {
                     <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:10px_10px]" />
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-[#0f172a] dark:text-white">Jun</span>
+                <span className="text-[11px] font-bold text-[#0f172a] dark:text-white">
+                  Jun
+                </span>
               </div>
 
               {["Jul", "Aug", "Sep"].map((m) => (
@@ -217,7 +247,9 @@ export default function PRDUVentraDashboardPage() {
                     <div className="w-2.5 bg-[#8a2be2] rounded-full h-[65%]" />
                     <div className="w-2.5 bg-[#0088ff]/30 rounded-full h-[55%]" />
                   </div>
-                  <span className="text-[11px] font-medium text-[#8a94a6]">{m}</span>
+                  <span className="text-[11px] font-medium text-[#8a94a6]">
+                    {m}
+                  </span>
                 </div>
               ))}
             </div>
@@ -255,7 +287,13 @@ export default function PRDUVentraDashboardPage() {
                 strokeLinecap="round"
               />
               <defs>
-                <linearGradient id="gradient-sales" x1="0%" y1="0%" x2="100%" y2="0%">
+                <linearGradient
+                  id="gradient-sales"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="0%"
+                >
                   <stop offset="0%" stopColor="#0088ff" />
                   <stop offset="100%" stopColor="#00c4cc" />
                 </linearGradient>
@@ -266,19 +304,29 @@ export default function PRDUVentraDashboardPage() {
               <div className="text-3xl font-extrabold font-mono-num text-[#0f172a] dark:text-white">
                 71.3%
               </div>
-              <div className="text-xs font-semibold text-[#8a94a6]">Sales Goal</div>
+              <div className="text-xs font-semibold text-[#8a94a6]">
+                Sales Goal
+              </div>
             </div>
           </div>
 
           {/* Bottom Split Metrics (in Rp) */}
           <div className="flex items-center justify-between border-t border-[#e6e9f0] dark:border-slate-800 pt-4">
             <div>
-              <span className="text-[10px] text-[#8a94a6] font-medium block">Number of sales</span>
-              <span className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">1,233</span>
+              <span className="text-[10px] text-[#8a94a6] font-medium block">
+                Number of sales
+              </span>
+              <span className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">
+                1,233
+              </span>
             </div>
             <div className="text-right">
-              <span className="text-[10px] text-[#8a94a6] font-medium block">Total Sales</span>
-              <span className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">{formatCurrency(152330000)}</span>
+              <span className="text-[10px] text-[#8a94a6] font-medium block">
+                Total Sales
+              </span>
+              <span className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">
+                {formatCurrency(152330000)}
+              </span>
             </div>
           </div>
         </div>
@@ -291,7 +339,10 @@ export default function PRDUVentraDashboardPage() {
             <h2 className="text-base font-bold text-[#0f172a] dark:text-white">
               Modul Utama Perusahaan
             </h2>
-            <p className="text-xs text-[#8a94a6]">Navigasi langsung ke Master Data, Penjualan, Pembelian, Inventaris, Keuangan & Akuntansi</p>
+            <p className="text-xs text-[#8a94a6]">
+              Navigasi langsung ke Master Data, Penjualan, Pembelian,
+              Inventaris, Keuangan & Akuntansi
+            </p>
           </div>
           <span className="text-xs font-mono font-bold bg-[#f0f7ff] dark:bg-blue-950/60 text-[#0088ff] dark:text-blue-400 px-3 py-1 rounded-full border border-[#0088ff]/20">
             Modul Lengkap
@@ -299,40 +350,82 @@ export default function PRDUVentraDashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-2">
-          <Link href="/master-data/companies" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/companies"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <Building2 className="h-6 w-6 text-[#0088ff] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">Master Data</div>
-            <div className="text-[10px] text-[#8a94a6]">Perusahaan, Cabang & Produk</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              Master Data
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              Perusahaan, Cabang & Produk
+            </div>
           </Link>
 
-          <Link href="/master-data/products" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/products"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <ShoppingCart className="h-6 w-6 text-[#10b981] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">Modul Penjualan</div>
-            <div className="text-[10px] text-[#8a94a6]">Penawaran → SO → Faktur</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              Modul Penjualan
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              Penawaran → SO → Faktur
+            </div>
           </Link>
 
-          <Link href="/master-data/suppliers" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/suppliers"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <ShoppingBag className="h-6 w-6 text-[#f59e0b] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">Pembelian</div>
-            <div className="text-[10px] text-[#8a94a6]">PR → RFQ → PO → Penerimaan</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              Pembelian
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              PR → RFQ → PO → Penerimaan
+            </div>
           </Link>
 
-          <Link href="/master-data/warehouses" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/warehouses"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <Boxes className="h-6 w-6 text-[#8a2be2] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">Inventaris</div>
-            <div className="text-[10px] text-[#8a94a6]">Stok Masuk/Keluar & Opname</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              Inventaris
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              Stok Masuk/Keluar & Opname
+            </div>
           </Link>
 
-          <Link href="/master-data/taxes" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/taxes"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <Landmark className="h-6 w-6 text-[#00b4d8] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">Keuangan & Buku Besar</div>
-            <div className="text-[10px] text-[#8a94a6]">Akun, Jurnal & Laba Rugi</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              Keuangan & Buku Besar
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              Akun, Jurnal & Laba Rugi
+            </div>
           </Link>
 
-          <Link href="/master-data/customers" className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group">
+          <Link
+            href="/master-data/customers"
+            className="p-4 rounded-2xl bg-[#f8f9fc] dark:bg-slate-800/40 hover:bg-[#f0f7ff] dark:hover:bg-blue-950/40 border border-[#e6e9f0] dark:border-slate-800 transition-colors group"
+          >
             <UserCheck className="h-6 w-6 text-[#ef4444] group-hover:scale-110 transition-transform mb-2" />
-            <div className="text-xs font-bold text-[#0f172a] dark:text-white">CRM & SDM</div>
-            <div className="text-[10px] text-[#8a94a6]">Pelanggan & Direktori Karyawan</div>
+            <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+              CRM & SDM
+            </div>
+            <div className="text-[10px] text-[#8a94a6]">
+              Pelanggan & Direktori Karyawan
+            </div>
           </Link>
         </div>
       </div>
@@ -357,11 +450,17 @@ export default function PRDUVentraDashboardPage() {
                   +
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Stok Ditambahkan</div>
-                  <div className="text-[11px] text-[#8a94a6]">200 unit iPhone 15 Pro Max ditambahkan</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Stok Ditambahkan
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    200 unit iPhone 15 Pro Max ditambahkan
+                  </div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-[#8a94a6]">09:25 AM</span>
+              <span className="text-[10px] font-mono text-[#8a94a6]">
+                09:25 AM
+              </span>
             </div>
 
             <div className="flex items-center justify-between bg-[#f8f9fc] dark:bg-slate-800/40 p-3 rounded-2xl">
@@ -370,11 +469,17 @@ export default function PRDUVentraDashboardPage() {
                   <Truck className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Pengiriman Diterima</div>
-                  <div className="text-[11px] text-[#8a94a6]">Pengiriman dari Techsupplier Inc</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Pengiriman Diterima
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    Pengiriman dari Techsupplier Inc
+                  </div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-[#8a94a6]">10:25 PM</span>
+              <span className="text-[10px] font-mono text-[#8a94a6]">
+                10:25 PM
+              </span>
             </div>
 
             <div className="flex items-center justify-between bg-[#f8f9fc] dark:bg-slate-800/40 p-3 rounded-2xl">
@@ -383,11 +488,17 @@ export default function PRDUVentraDashboardPage() {
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Pesanan Diproses</div>
-                  <div className="text-[11px] text-[#8a94a6]">Pesanan #1024 telah diproses</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Pesanan Diproses
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    Pesanan #1024 telah diproses
+                  </div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-[#8a94a6]">12:25 PM</span>
+              <span className="text-[10px] font-mono text-[#8a94a6]">
+                12:25 PM
+              </span>
             </div>
 
             <div className="flex items-center justify-between bg-[#f8f9fc] dark:bg-slate-800/40 p-3 rounded-2xl">
@@ -396,11 +507,17 @@ export default function PRDUVentraDashboardPage() {
                   <RotateCcw className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Retur Diproses</div>
-                  <div className="text-[11px] text-[#8a94a6]">Retur #RMA1023 telah diproses</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Retur Diproses
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    Retur #RMA1023 telah diproses
+                  </div>
                 </div>
               </div>
-              <span className="text-[10px] font-mono text-[#8a94a6]">02:25 AM</span>
+              <span className="text-[10px] font-mono text-[#8a94a6]">
+                02:25 AM
+              </span>
             </div>
           </div>
         </div>
@@ -423,8 +540,12 @@ export default function PRDUVentraDashboardPage() {
                   !
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Peringatan Stok Habis</div>
-                  <div className="text-[11px] text-[#8a94a6]">12 barang kehabisan stok</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Peringatan Stok Habis
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    12 barang kehabisan stok
+                  </div>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-[#8a94a6]" />
@@ -436,8 +557,12 @@ export default function PRDUVentraDashboardPage() {
                   <Clock className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Segera Kadaluarsa</div>
-                  <div className="text-[11px] text-[#8a94a6]">6 barang akan segera kadaluarsa</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Segera Kadaluarsa
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    6 barang akan segera kadaluarsa
+                  </div>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-[#8a94a6]" />
@@ -449,8 +574,12 @@ export default function PRDUVentraDashboardPage() {
                   <AlertCircle className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Peringatan Stok Menipis</div>
-                  <div className="text-[11px] text-[#8a94a6]">48 barang stoknya menipis</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Peringatan Stok Menipis
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    48 barang stoknya menipis
+                  </div>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-[#8a94a6]" />
@@ -462,8 +591,12 @@ export default function PRDUVentraDashboardPage() {
                   <Layers className="h-4 w-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">Pesanan Tertunda</div>
-                  <div className="text-[11px] text-[#8a94a6]">24 pesanan menunggu diproses</div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Pesanan Tertunda
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    24 pesanan menunggu diproses
+                  </div>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-[#8a94a6]" />
@@ -497,12 +630,18 @@ export default function PRDUVentraDashboardPage() {
                   <div className="text-xs font-bold text-[#0f172a] dark:text-white">
                     Nordic Accent Armchair
                   </div>
-                  <div className="text-[10px] font-mono text-[#8a94a6]">ID:RT15567663</div>
+                  <div className="text-[10px] font-mono text-[#8a94a6]">
+                    ID:RT15567663
+                  </div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">{formatCurrency(3100000)}</div>
-                <div className="text-[10px] text-[#8a94a6] font-medium">4 Pesanan</div>
+                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">
+                  {formatCurrency(3100000)}
+                </div>
+                <div className="text-[10px] text-[#8a94a6] font-medium">
+                  4 Pesanan
+                </div>
               </div>
             </div>
 
@@ -520,12 +659,18 @@ export default function PRDUVentraDashboardPage() {
                   <div className="text-xs font-bold text-[#0f172a] dark:text-white">
                     AeroFlex Running Shoes
                   </div>
-                  <div className="text-[10px] font-mono text-[#8a94a6]">ID:RT15266730</div>
+                  <div className="text-[10px] font-mono text-[#8a94a6]">
+                    ID:RT15266730
+                  </div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">{formatCurrency(3875000)}</div>
-                <div className="text-[10px] text-[#8a94a6] font-medium">2 Pesanan</div>
+                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">
+                  {formatCurrency(3875000)}
+                </div>
+                <div className="text-[10px] text-[#8a94a6] font-medium">
+                  2 Pesanan
+                </div>
               </div>
             </div>
 
@@ -543,12 +688,18 @@ export default function PRDUVentraDashboardPage() {
                   <div className="text-xs font-bold text-[#0f172a] dark:text-white">
                     Rebel Ink Jogger Pants
                   </div>
-                  <div className="text-[10px] font-mono text-[#8a94a6]">ID:RT15247890</div>
+                  <div className="text-[10px] font-mono text-[#8a94a6]">
+                    ID:RT15247890
+                  </div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">{formatCurrency(2325000)}</div>
-                <div className="text-[10px] text-[#8a94a6] font-medium">6 Pesanan</div>
+                <div className="text-sm font-bold font-mono-num text-[#0f172a] dark:text-white">
+                  {formatCurrency(2325000)}
+                </div>
+                <div className="text-[10px] text-[#8a94a6] font-medium">
+                  6 Pesanan
+                </div>
               </div>
             </div>
           </div>

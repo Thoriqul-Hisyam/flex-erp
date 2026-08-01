@@ -8,6 +8,13 @@
       "when": 1785521126458,
       "tag": "0000_shocking_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785590238301,
+      "tag": "0001_medical_dragon_man",
+      "breakpoints": true
     }
   ]
 }

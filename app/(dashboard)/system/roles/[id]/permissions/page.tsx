@@ -319,14 +319,14 @@ export default function RolePermissionsPage() {
       if (res.success) {
         showToast({
           type: "success",
-          title: "Per-Page Permissions Saved",
-          message: `Updated page-level permissions matrix for "${role?.name}" (${totalCount} permissions enabled).`,
+          title: "Permission Berhasil Disimpan",
+          message: `Pengaturan permission halaman untuk "${role?.name}" telah diperbarui (${totalCount} permission aktif).`,
         });
       } else {
         showToast({
           type: "error",
-          title: "Save Failed",
-          message: res.error || "Failed to update page permissions matrix.",
+          title: "Gagal Menyimpan",
+          message: res.error || "Gagal memperbarui pengaturan permission halaman.",
         });
       }
     });
@@ -336,9 +336,9 @@ export default function RolePermissionsPage() {
     const matchesSearch =
       pageMod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       pageMod.route.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pageMod.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === "ALL" || pageMod.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+      pageMod.key.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCat = categoryFilter === "ALL" || pageMod.category === categoryFilter;
+    return matchesSearch && matchesCat;
   });
 
   const categories = ["ALL", "Master Data", "Commercial & CRM", "Inventory & Logistics", "Finance & Accounting", "System Security"];
@@ -377,7 +377,7 @@ export default function RolePermissionsPage() {
 
           <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-white flex items-center gap-2 pt-1">
             <Shield className="h-6 w-6 text-[#0088ff]" />
-            Per-Page Permissions Matrix: {role.name}
+            Pengaturan Permission Halaman: {role.name}
             {role.isSystem && (
               <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-600 dark:text-blue-400">
                 System Built-in
@@ -390,7 +390,7 @@ export default function RolePermissionsPage() {
         {/* Live Active Counter Badge & Primary Save Button */}
         <div className="flex items-center gap-4 shrink-0">
           <div className="text-right">
-            <div className="text-xs text-[#8a94a6]">Active Page Grants</div>
+            <div className="text-xs text-[#8a94a6]">Total Permission Aktif</div>
             <div className="text-xl font-bold font-mono text-[#0088ff]">{totalActive} / {maxPossible}</div>
           </div>
           <Button
@@ -399,7 +399,7 @@ export default function RolePermissionsPage() {
             className="bg-[#0088ff] hover:bg-[#0077e6] text-white rounded-full px-6 py-2.5 gap-2 shadow-lg shadow-blue-500/20 font-semibold"
           >
             <Save className="h-4 w-4" />
-            {isSaving ? "Saving Matrix..." : "Save Page Matrix"}
+            {isSaving ? "Menyimpan Permission..." : "Simpan Permission"}
           </Button>
         </div>
       </div>
