@@ -27,6 +27,7 @@ export interface UserContext {
   isSuperAdmin: boolean;
   companyId: string | null;
   companyName: string;
+  companyLogoUrl?: string;
   branchId: string | null;
   branchName: string;
   warehouseName: string;
@@ -68,11 +69,6 @@ export async function createSession(
 /**
  * Reads the session cookie and resolves the authenticated user ONLY if the
  * session token is valid: exists in DB, not revoked, and not expired.
- *
- * Returns null when there is no valid session (fail-closed).
- *
- * Wrapped in React `cache()` so that all server calls within a single
- * request reuse one result instead of re-reading the DB each time.
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   try {
@@ -85,7 +81,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
     const now = new Date();
 
-    // 1. Look up an active session by token in a single query
     const [sessionRecord] = await db
       .select()
       .from(schema.sessions)
@@ -101,7 +96,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       return null;
     }
 
-    // 2. Resolve the owning user in a single query
     const [userRecord] = await db
       .select()
       .from(schema.users)
@@ -129,9 +123,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
 /**
  * Resolves display context (company/branch/tenant/role names) for a session
- * user, running the lookups in parallel via `Promise.all`. Shared by the
- * permission server actions so they don't duplicate the same queries, and
- * memoized with `cache()` per request.
+ * user, querying siteSettings.logoUrl and companies.logoUrl from DB.
  */
 export const getUserContext = cache(
   async (user: SessionUser): Promise<UserContext> => {
@@ -143,7 +135,7 @@ export const getUserContext = cache(
     let roleName = user.role || "Unknown";
     let isSuperAdmin = false;
 
-    const [company, branch, tenant, role] = await Promise.all([
+    const [company, branch, tenant, role, settings] = await Promise.all([
       user.companyId
         ? db
             .select()
@@ -174,7 +166,15 @@ export const getUserContext = cache(
             .limit(1)
             .then((rows) => rows[0] ?? null)
         : Promise.resolve(null),
+      db
+        .select()
+        .from(schema.siteSettings)
+        .where(eq(schema.siteSettings.tenantId, user.tenantId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
     ]);
+
+    let companyLogoUrl = company?.logoUrl || settings?.logoUrl || "/logo/logo.png";
 
     if (company) companyName = company.name;
     if (branch) branchName = branch.name;
@@ -202,6 +202,7 @@ export const getUserContext = cache(
       isSuperAdmin,
       companyId: user.companyId,
       companyName,
+      companyLogoUrl,
       branchId: user.branchId,
       branchName,
       warehouseName,
@@ -213,31 +214,18 @@ export const getUserContext = cache(
   },
 );
 
-/**
- * Revokes the current session: clears the cookie AND marks the DB record
- * as revoked so the token can no longer be used even if stolen.
- */
 export async function revokeSession(): Promise<void> {
   try {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
-
     if (sessionCookie?.value) {
       await db
         .update(schema.sessions)
         .set({ revokedAt: new Date() })
         .where(eq(schema.sessions.token, sessionCookie.value));
     }
+    cookieStore.delete(SESSION_COOKIE_NAME);
   } catch (error) {
     console.warn("[session] revokeSession error:", error);
-  } finally {
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE_NAME, "", {
-      httpOnly: true,
-      path: "/",
-      maxAge: 0,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    });
   }
 }

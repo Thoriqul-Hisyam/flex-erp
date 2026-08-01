@@ -34,6 +34,8 @@ function getStoreKey(entityName: string): string {
     return "supplier";
   if (normalized.includes("unit") || normalized.includes("satuan"))
     return "unit";
+  if (normalized.includes("department") || normalized.includes("departemen") || normalized.includes("divisi"))
+    return "department";
   if (normalized.includes("tax") || normalized.includes("pajak")) return "tax";
   if (
     normalized.includes("user") ||
@@ -73,6 +75,12 @@ function getTableForEntity(entityName: string) {
     return schema.suppliers;
   if (normalized.includes("unit") || normalized.includes("satuan"))
     return schema.units;
+  if (
+    normalized.includes("department") ||
+    normalized.includes("departemen") ||
+    normalized.includes("divisi")
+  )
+    return schema.departments;
   if (normalized.includes("tax") || normalized.includes("pajak"))
     return schema.taxes;
   if (
@@ -910,6 +918,11 @@ export async function getUserSessionDataAction(): Promise<ActionResult> {
         "md_warehouses",
         "crm_customers",
         "crm_suppliers",
+        "inv_stocks",
+        "inv_movements",
+        "inv_adjustments",
+        "inv_transfers",
+        "inv_batches",
         "sys_users",
         "sys_roles",
         "sys_audit",

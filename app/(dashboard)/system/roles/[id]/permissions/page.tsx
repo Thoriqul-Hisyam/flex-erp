@@ -2,63 +2,256 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ShieldCheck, ArrowLeft, Check, Lock, RotateCcw, CheckSquare, Square, Search, Shield, Filter, Save, FileText } from "lucide-react";
+import {
+  ShieldCheck,
+  ArrowLeft,
+  Check,
+  Lock,
+  RotateCcw,
+  CheckSquare,
+  Square,
+  Search,
+  Shield,
+  Filter,
+  Save,
+  FileText,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { RoleData } from "@/lib/types/entities";
-import { updateRolePermissionsAction, fetchRecordsAction, fetchRolePermissionsAction } from "@/app/actions/crud-actions";
+import {
+  updateRolePermissionsAction,
+  fetchRecordsAction,
+  fetchRolePermissionsAction,
+} from "@/app/actions/crud-actions";
 
 interface PageModuleConfig {
   key: string;
   name: string;
   route: string;
   category: string;
-  icon: string;
+  icon?: string;
   description: string;
 }
 
 // Per-Page / Per-Resource Enterprise ERP Matrix Catalog
 const PAGE_MODULES: PageModuleConfig[] = [
   // 1. Master Data Pages
-  { key: "md_companies", name: "Company Profiles & Legal Entities", route: "/master-data/companies", category: "Master Data", icon: "🏛️", description: "Manage corporate entities, tax IDs, multi-tenant subsidiaries, and currencies." },
-  { key: "md_branches", name: "Branch Offices & Locations", route: "/master-data/branches", category: "Master Data", icon: "🏢", description: "Manage regional branches, headquarters flags, contact numbers, and office addresses." },
-  { key: "md_warehouses", name: "Warehouses & Logistics Hubs", route: "/master-data/warehouses", category: "Master Data", icon: "📦", description: "Manage storage facilities, capacity utilization %, and default fulfillment hubs." },
-  { key: "md_categories", name: "Product Categories", route: "/master-data/product-categories", category: "Master Data", icon: "🏷️", description: "Manage SKU category hierarchies, product classifications, and category codes." },
-  { key: "md_products", name: "Products & Service Items", route: "/master-data/products", category: "Master Data", icon: "🛒", description: "Manage global SKU catalog, standard cost prices, list selling prices, and UOM." },
+  {
+    key: "md_companies",
+    name: "Company Profiles & Legal Entities",
+    route: "/master-data/companies",
+    category: "Master Data",
+    description:
+      "Manage corporate entities, tax IDs, multi-tenant subsidiaries, and currencies.",
+  },
+  {
+    key: "md_branches",
+    name: "Branch Offices & Locations",
+    route: "/master-data/branches",
+    category: "Master Data",
+    description:
+      "Manage regional branches, headquarters flags, contact numbers, and office addresses.",
+  },
+  {
+    key: "md_warehouses",
+    name: "Warehouses & Logistics Hubs",
+    route: "/master-data/warehouses",
+    category: "Master Data",
+    description:
+      "Manage storage facilities, capacity utilization %, and default fulfillment hubs.",
+  },
+  {
+    key: "md_categories",
+    name: "Product Categories",
+    route: "/master-data/product-categories",
+    category: "Master Data",
+    description:
+      "Manage SKU category hierarchies, product classifications, and category codes.",
+  },
+  {
+    key: "md_products",
+    name: "Products & Service Items",
+    route: "/master-data/products",
+    category: "Master Data",
+    description:
+      "Manage global SKU catalog, standard cost prices, list selling prices, and UOM.",
+  },
 
   // 2. Commercial & CRM Pages
-  { key: "crm_customers", name: "Customer Directory & Credit Terms", route: "/crm/customers", category: "Commercial & CRM", icon: "🤝", description: "Manage customer profiles, credit limit limits, payment terms, and tax IDs." },
-  { key: "crm_suppliers", name: "Supplier & Vendor Directory", route: "/crm/suppliers", category: "Commercial & CRM", icon: "🏭", description: "Manage vendor master records, supplier ratings, payment terms, and tax data." },
-  { key: "sales_orders", name: "Sales Orders & POS Terminal", route: "/sales/orders", category: "Commercial & CRM", icon: "💳", description: "Create and process commercial sales orders, POS receipts, and invoice billing." },
-  { key: "sales_quotations", name: "Commercial Quotations & Bids", route: "/sales/quotations", category: "Commercial & CRM", icon: "📑", description: "Draft sales proposals, price estimations, and customer quotations." },
+  {
+    key: "crm_customers",
+    name: "Customer Directory & Credit Terms",
+    route: "/crm/customers",
+    category: "Commercial & CRM",
+    description:
+      "Manage customer profiles, credit limit limits, payment terms, and tax IDs.",
+  },
+  {
+    key: "crm_suppliers",
+    name: "Supplier & Vendor Directory",
+    route: "/crm/suppliers",
+    category: "Commercial & CRM",
+    description:
+      "Manage vendor master records, supplier ratings, payment terms, and tax data.",
+  },
+  {
+    key: "sales_orders",
+    name: "Sales Orders & POS Terminal",
+    route: "/sales/orders",
+    category: "Commercial & CRM",
+    description:
+      "Create and process commercial sales orders, POS receipts, and invoice billing.",
+  },
+  {
+    key: "sales_quotations",
+    name: "Commercial Quotations & Bids",
+    route: "/sales/quotations",
+    category: "Commercial & CRM",
+    description:
+      "Draft sales proposals, price estimations, and customer quotations.",
+  },
 
   // 3. Inventory & Operations Pages
-  { key: "inv_stocks", name: "Inventory Stock Balances", route: "/inventory/stock-balance", category: "Inventory & Logistics", icon: "📊", description: "Monitor real-time stock-on-hand, reserved inventory, and reorder alerts." },
-  { key: "inv_transfers", name: "Inter-Warehouse Stock Transfers", route: "/inventory/stock-transfers", category: "Inventory & Logistics", icon: "🚚", description: "Issue and approve stock movements between branches and logistics hubs." },
-  { key: "inv_adjustments", name: "Stock Count Adjustments", route: "/inventory/stock-adjustments", category: "Inventory & Logistics", icon: "⚖️", description: "Perform physical stock count reconciliation, write-offs, and stock variances." },
+  {
+    key: "inv_stocks",
+    name: "Inventory Stock Balances",
+    route: "/inventory/stocks",
+    category: "Inventory & Logistics",
+    description:
+      "Monitor real-time stock-on-hand, reserved inventory, and reorder alerts.",
+  },
+  {
+    key: "inv_movements",
+    name: "Stock Movement Ledger",
+    route: "/inventory/movements",
+    category: "Inventory & Logistics",
+    description:
+      "View the immutable stock ledger: stock in/out, transfers and adjustments.",
+  },
+  {
+    key: "inv_batches",
+    name: "Batch & Expiry Tracking",
+    route: "/inventory/batches",
+    category: "Inventory & Logistics",
+    description:
+      "Manage product batches, expiry dates, and expiring-soon alerts.",
+  },
+  {
+    key: "inv_transfers",
+    name: "Inter-Warehouse Stock Transfers",
+    route: "/inventory/transfers",
+    category: "Inventory & Logistics",
+    description:
+      "Issue and approve stock movements between branches and logistics hubs.",
+  },
+  {
+    key: "inv_adjustments",
+    name: "Stock Count Adjustments",
+    route: "/inventory/adjustments",
+    category: "Inventory & Logistics",
+    description:
+      "Perform physical stock count reconciliation, write-offs, and stock variances.",
+  },
 
   // 4. Finance & Accounting Pages
-  { key: "fin_coa", name: "Chart of Accounts (COA)", route: "/finance/chart-of-accounts", category: "Finance & Accounting", icon: "📚", description: "Manage GL account numbers, account types, balances, and parent structures." },
-  { key: "fin_journals", name: "General Ledger & Journal Entries", route: "/finance/journal-entries", category: "Finance & Accounting", icon: "🧾", description: "Create, post, and audit double-entry journal vouchers and ledger postings." },
-  { key: "fin_taxes", name: "Tax Rates & Rules Setup", route: "/finance/taxes", category: "Finance & Accounting", icon: "📝", description: "Configure VAT/PPN tax rates, inclusive/exclusive calculation, and tax codes." },
-  { key: "fin_reports", name: "Financial Statements & Reports", route: "/finance/financial-reports", category: "Finance & Accounting", icon: "📈", description: "View and export Balance Sheet, Income Statement, and Trial Balance reports." },
+  {
+    key: "fin_coa",
+    name: "Chart of Accounts (COA)",
+    route: "/finance/chart-of-accounts",
+    category: "Finance & Accounting",
+    description:
+      "Manage GL account numbers, account types, balances, and parent structures.",
+  },
+  {
+    key: "fin_journals",
+    name: "General Ledger & Journal Entries",
+    route: "/finance/journal-entries",
+    category: "Finance & Accounting",
+    description:
+      "Create, post, and audit double-entry journal vouchers and ledger postings.",
+  },
+  {
+    key: "fin_taxes",
+    name: "Tax Rates & Rules Setup",
+    route: "/finance/taxes",
+    category: "Finance & Accounting",
+    description:
+      "Configure VAT/PPN tax rates, inclusive/exclusive calculation, and tax codes.",
+  },
+  {
+    key: "fin_reports",
+    name: "Financial Statements & Reports",
+    route: "/finance/financial-reports",
+    category: "Finance & Accounting",
+    description:
+      "View and export Balance Sheet, Income Statement, and Trial Balance reports.",
+  },
 
   // 5. System Administration Pages
-  { key: "sys_users", name: "User Accounts & Security Scope", route: "/system/users", category: "System Security", icon: "👤", description: "Manage user identities, assigned RBAC roles, multi-tenant scopes, and login status." },
-  { key: "sys_roles", name: "RBAC Roles & Permissions Matrix", route: "/system/roles", category: "System Security", icon: "🛡️", description: "Define security roles, configure per-page action permissions, and access controls." },
-  { key: "sys_audit", name: "Security Audit Trail Logs", route: "/system/audit-logs", category: "System Security", icon: "📜", description: "Inspect system audit logs, user activity timestamps, IP addresses, and payload diffs." },
-  { key: "sys_settings", name: "Tenant & Portal Site Settings", route: "/system/settings", category: "System Security", icon: "⚙️", description: "Configure system branding, site logos, dark/light themes, and regional settings." },
+  {
+    key: "sys_users",
+    name: "User Accounts & Security Scope",
+    route: "/system/users",
+    category: "System Security",
+    description:
+      "Manage user identities, assigned RBAC roles, multi-tenant scopes, and login status.",
+  },
+  {
+    key: "sys_roles",
+    name: "RBAC Roles & Permissions Matrix",
+    route: "/system/roles",
+    category: "System Security",
+    description:
+      "Define security roles, configure per-page action permissions, and access controls.",
+  },
+  {
+    key: "sys_audit",
+    name: "Security Audit Trail Logs",
+    route: "/system/audit-logs",
+    category: "System Security",
+    description:
+      "Inspect system audit logs, user activity timestamps, IP addresses, and payload diffs.",
+  },
+  {
+    key: "sys_settings",
+    name: "Tenant & Portal Site Settings",
+    route: "/system/settings",
+    category: "System Security",
+    description:
+      "Configure system branding, site logos, dark/light themes, and regional settings.",
+  },
 ];
 
 const ACTIONS = [
-  { key: "read", label: "Read / View", desc: "View page records, tables, and details" },
+  {
+    key: "read",
+    label: "Read / View",
+    desc: "View page records, tables, and details",
+  },
   { key: "create", label: "Create", desc: "Create new records on this page" },
-  { key: "update", label: "Edit / Modify", desc: "Modify existing records on this page" },
-  { key: "delete", label: "Delete / Purge", desc: "Permanently delete or void records" },
-  { key: "approve", label: "Approve / Post", desc: "Approve workflow requisitions or post journals" },
-  { key: "export", label: "Export Data", desc: "Export page data to CSV, Excel, or PDF" },
+  {
+    key: "update",
+    label: "Edit / Modify",
+    desc: "Modify existing records on this page",
+  },
+  {
+    key: "delete",
+    label: "Delete / Purge",
+    desc: "Permanently delete or void records",
+  },
+  {
+    key: "approve",
+    label: "Approve / Post",
+    desc: "Approve workflow requisitions or post journals",
+  },
+  {
+    key: "export",
+    label: "Export Data",
+    desc: "Export page data to CSV, Excel, or PDF",
+  },
 ];
 
 const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
@@ -66,21 +259,33 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
     id: "role-1",
     code: "SUPER_ADMIN",
     name: "Super Administrator",
-    description: "Unrestricted access across all enterprise pages, multi-tenant settings, and system security controls.",
+    description:
+      "Unrestricted access across all enterprise pages, multi-tenant settings, and system security controls.",
     usersCount: 3,
     permissionsCount: 120,
     isSystem: true,
     status: "ACTIVE",
-    permissions: PAGE_MODULES.reduce((acc, m) => {
-      acc[m.key] = ["read", "create", "update", "delete", "approve", "export"];
-      return acc;
-    }, {} as Record<string, string[]>),
+    permissions: PAGE_MODULES.reduce(
+      (acc, m) => {
+        acc[m.key] = [
+          "read",
+          "create",
+          "update",
+          "delete",
+          "approve",
+          "export",
+        ];
+        return acc;
+      },
+      {} as Record<string, string[]>,
+    ),
   },
   "role-2": {
     id: "role-2",
     code: "FINANCE_DIR",
     name: "Finance Director",
-    description: "Full authority over financial statements, general ledger, tax rules, and purchase order approvals.",
+    description:
+      "Full authority over financial statements, general ledger, tax rules, and purchase order approvals.",
     usersCount: 2,
     permissionsCount: 54,
     status: "ACTIVE",
@@ -111,7 +316,8 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
     id: "role-3",
     code: "SALES_MGR",
     name: "Sales Manager",
-    description: "Authority to manage POS orders, commercial quotations, customer accounts, and price lists.",
+    description:
+      "Authority to manage POS orders, commercial quotations, customer accounts, and price lists.",
     usersCount: 5,
     permissionsCount: 38,
     status: "ACTIVE",
@@ -142,7 +348,8 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
     id: "role-4",
     code: "WH_SUPERVISOR",
     name: "Warehouse Supervisor",
-    description: "Full control over physical stock counts, stock transfers, warehouse allocations, and goods receiving.",
+    description:
+      "Full control over physical stock counts, stock transfers, warehouse allocations, and goods receiving.",
     usersCount: 8,
     permissionsCount: 42,
     status: "ACTIVE",
@@ -173,7 +380,8 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
     id: "role-5",
     code: "PROCUREMENT_SPEC",
     name: "Procurement Specialist",
-    description: "Manages vendor quotations, purchase requisitions, supplier master records, and receipt verification.",
+    description:
+      "Manages vendor quotations, purchase requisitions, supplier master records, and receipt verification.",
     usersCount: 4,
     permissionsCount: 30,
     status: "ACTIVE",
@@ -211,7 +419,9 @@ export default function RolePermissionsPage() {
   const [role, setRole] = React.useState<RoleData | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState<string>("ALL");
-  const [activePermissions, setActivePermissions] = React.useState<Record<string, string[]>>({});
+  const [activePermissions, setActivePermissions] = React.useState<
+    Record<string, string[]>
+  >({});
   const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -224,10 +434,13 @@ export default function RolePermissionsPage() {
       usersCount: 1,
       permissionsCount: 20,
       status: "ACTIVE" as const,
-      permissions: PAGE_MODULES.reduce((acc, m) => {
-        acc[m.key] = ["read"];
-        return acc;
-      }, {} as Record<string, string[]>),
+      permissions: PAGE_MODULES.reduce(
+        (acc, m) => {
+          acc[m.key] = ["read"];
+          return acc;
+        },
+        {} as Record<string, string[]>,
+      ),
     };
 
     fetchRecordsAction("Role").then((res) => {
@@ -277,7 +490,9 @@ export default function RolePermissionsPage() {
     setActivePermissions((prev) => {
       const currentPageActions = prev[pageKey] || [];
       const allActionKeys = ACTIONS.map((a) => a.key);
-      const isAllSelected = allActionKeys.every((a) => currentPageActions.includes(a));
+      const isAllSelected = allActionKeys.every((a) =>
+        currentPageActions.includes(a),
+      );
 
       return {
         ...prev,
@@ -326,7 +541,8 @@ export default function RolePermissionsPage() {
         showToast({
           type: "error",
           title: "Gagal Menyimpan",
-          message: res.error || "Gagal memperbarui pengaturan permission halaman.",
+          message:
+            res.error || "Gagal memperbarui pengaturan permission halaman.",
         });
       }
     });
@@ -337,11 +553,19 @@ export default function RolePermissionsPage() {
       pageMod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       pageMod.route.toLowerCase().includes(searchQuery.toLowerCase()) ||
       pageMod.key.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = categoryFilter === "ALL" || pageMod.category === categoryFilter;
+    const matchesCat =
+      categoryFilter === "ALL" || pageMod.category === categoryFilter;
     return matchesSearch && matchesCat;
   });
 
-  const categories = ["ALL", "Master Data", "Commercial & CRM", "Inventory & Logistics", "Finance & Accounting", "System Security"];
+  const categories = [
+    "ALL",
+    "Master Data",
+    "Commercial & CRM",
+    "Inventory & Logistics",
+    "Finance & Accounting",
+    "System Security",
+  ];
   const totalActive = calculateTotalPermissions();
   const maxPossible = PAGE_MODULES.length * ACTIONS.length;
 
@@ -372,14 +596,19 @@ export default function RolePermissionsPage() {
             <span className="text-[#8a94a6] text-xs">/</span>
             <span className="text-[#8a94a6] text-xs">Per-Page Permissions</span>
             <span className="text-[#8a94a6] text-xs">/</span>
-            <span className="text-xs font-semibold text-[#0088ff]">{role.code}</span>
+            <span className="text-xs font-semibold text-[#0088ff]">
+              {role.code}
+            </span>
           </div>
 
           <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-white flex items-center gap-2 pt-1">
             <Shield className="h-6 w-6 text-[#0088ff]" />
             Pengaturan Permission Halaman: {role.name}
             {role.isSystem && (
-              <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-600 dark:text-blue-400">
+              <Badge
+                variant="outline"
+                className="text-xs border-blue-500/30 text-blue-600 dark:text-blue-400"
+              >
                 System Built-in
               </Badge>
             )}
@@ -391,7 +620,9 @@ export default function RolePermissionsPage() {
         <div className="flex items-center gap-4 shrink-0">
           <div className="text-right">
             <div className="text-xs text-[#8a94a6]">Total Permission Aktif</div>
-            <div className="text-xl font-bold font-mono text-[#0088ff]">{totalActive} / {maxPossible}</div>
+            <div className="text-xl font-bold font-mono text-[#0088ff]">
+              {totalActive} / {maxPossible}
+            </div>
           </div>
           <Button
             onClick={handleSave}
@@ -474,101 +705,134 @@ export default function RolePermissionsPage() {
       <div className="bg-white dark:bg-[#12161f] rounded-[24px] border border-[#e6e9f0] dark:border-slate-800 shadow-xs">
         <table className="w-full text-left text-xs">
           <thead className="sticky -top-4 md:-top-6 z-20 bg-[#f8f9fc] dark:bg-[#1e293b] shadow-sm">
-              <tr className="text-[#8a94a6] font-semibold border-b border-[#e6e9f0] dark:border-slate-800">
-                <th className="py-3 px-5 bg-[#f8f9fc] dark:bg-[#1e293b]">ERP Page / Route Resource</th>
-                {ACTIONS.map((act) => (
-                  <th key={act.key} className="py-3 px-2 text-center bg-[#f8f9fc] dark:bg-[#1e293b]" title={act.desc}>
-                    <div className="font-bold text-[#0f172a] dark:text-slate-200 text-[11px]">{act.label}</div>
-                    <div className="text-[9px] font-normal text-slate-400 hidden sm:block">{act.key}</div>
-                  </th>
-                ))}
-                <th className="py-3 px-3 text-center bg-[#f8f9fc] dark:bg-[#1e293b]">Toggle</th>
+            <tr className="text-[#8a94a6] font-semibold border-b border-[#e6e9f0] dark:border-slate-800">
+              <th className="py-3 px-5 bg-[#f8f9fc] dark:bg-[#1e293b]">
+                ERP Page / Route Resource
+              </th>
+              {ACTIONS.map((act) => (
+                <th
+                  key={act.key}
+                  className="py-3 px-2 text-center bg-[#f8f9fc] dark:bg-[#1e293b]"
+                  title={act.desc}
+                >
+                  <div className="font-bold text-[#0f172a] dark:text-slate-200 text-[11px]">
+                    {act.label}
+                  </div>
+                  <div className="text-[9px] font-normal text-slate-400 hidden sm:block">
+                    {act.key}
+                  </div>
+                </th>
+              ))}
+              <th className="py-3 px-3 text-center bg-[#f8f9fc] dark:bg-[#1e293b]">
+                Toggle
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#f0f2f7] dark:divide-slate-800/60">
+            {filteredPageModules.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="py-12 text-center text-[#8a94a6]">
+                  No ERP pages match your search or category filter.
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f0f2f7] dark:divide-slate-800/60">
-              {filteredPageModules.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-[#8a94a6]">
-                    No ERP pages match your search or category filter.
-                  </td>
-                </tr>
-              ) : (
-                filteredPageModules.map((pageMod) => {
-                  const currentPageActions = activePermissions[pageMod.key] || [];
-                  const allActionKeys = ACTIONS.map((a) => a.key);
-                  const isAllSelected = allActionKeys.every((a) => currentPageActions.includes(a));
+            ) : (
+              filteredPageModules.map((pageMod) => {
+                const currentPageActions = activePermissions[pageMod.key] || [];
+                const allActionKeys = ACTIONS.map((a) => a.key);
+                const isAllSelected = allActionKeys.every((a) =>
+                  currentPageActions.includes(a),
+                );
 
-                  return (
-                    <tr key={pageMod.key} className="hover:bg-[#f8f9fc]/80 dark:hover:bg-[#1e293b]/40 transition-colors">
-                      {/* ERP Page Details & Route Badge */}
-                      <td className="py-3.5 px-5">
-                        <div className="flex items-start gap-3">
-                          <span className="text-xl p-2 rounded-2xl bg-[#f8f9fc] dark:bg-[#1e293b] border border-[#e6e9f0] dark:border-slate-800 shrink-0">
-                            {pageMod.icon}
-                          </span>
-                          <div>
-                            <div className="text-sm font-bold text-[#0f172a] dark:text-white flex items-center gap-2">
-                              {pageMod.name}
-                              <Badge variant="outline" className="text-[9px] py-0 px-1.5 font-mono">
-                                {pageMod.category}
-                              </Badge>
-                            </div>
-                            <div className="text-xs text-[#0088ff] font-mono font-medium mt-0.5 flex items-center gap-1">
-                              <FileText className="h-3 w-3" />
-                              {pageMod.route}
-                            </div>
-                            <div className="text-xs text-[#8a94a6] leading-snug mt-0.5">{pageMod.description}</div>
+                return (
+                  <tr
+                    key={pageMod.key}
+                    className="hover:bg-[#f8f9fc]/80 dark:hover:bg-[#1e293b]/40 transition-colors"
+                  >
+                    {/* ERP Page Details & Route Badge */}
+                    <td className="py-3.5 px-5">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 rounded-2xl bg-[#0088ff]/10 text-[#0088ff] border border-blue-200 dark:border-blue-900 shrink-0">
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-[#0f172a] dark:text-white flex items-center gap-2">
+                            {pageMod.name}
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] py-0 px-1.5 font-mono"
+                            >
+                              {pageMod.category}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-[#0088ff] font-mono font-medium mt-0.5 flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            {pageMod.route}
+                          </div>
+                          <div className="text-xs text-[#8a94a6] leading-snug mt-0.5">
+                            {pageMod.description}
                           </div>
                         </div>
-                      </td>
+                      </div>
+                    </td>
 
-                      {/* Action Checkboxes per Page */}
-                      {ACTIONS.map((act) => {
-                        const isChecked = currentPageActions.includes(act.key);
-                        return (
-                          <td key={act.key} className="py-3.5 px-2 text-center align-middle">
-                            <label className="inline-flex items-center justify-center cursor-pointer p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => togglePermission(pageMod.key, act.key)}
-                                className="sr-only"
-                              />
-                              <div
-                                className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                                  isChecked
-                                    ? "bg-[#0088ff] border-[#0088ff] text-white shadow-xs scale-105"
-                                    : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-[#0088ff]"
-                                }`}
-                              >
-                                {isChecked && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-                              </div>
-                            </label>
-                          </td>
-                        );
-                      })}
-
-                      {/* Toggle Entire Page Row */}
-                      <td className="py-3.5 px-3 text-center align-middle">
-                        <button
-                          type="button"
-                          onClick={() => toggleRowAll(pageMod.key)}
-                          className="inline-flex items-center justify-center text-slate-500 hover:text-[#0088ff] p-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
-                          title={isAllSelected ? "Unselect all page actions" : "Select all page actions"}
+                    {/* Action Checkboxes per Page */}
+                    {ACTIONS.map((act) => {
+                      const isChecked = currentPageActions.includes(act.key);
+                      return (
+                        <td
+                          key={act.key}
+                          className="py-3.5 px-2 text-center align-middle"
                         >
-                          {isAllSelected ? (
-                            <CheckSquare className="h-4.5 w-4.5 text-[#0088ff]" />
-                          ) : (
-                            <Square className="h-4.5 w-4.5 text-slate-400" />
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                          <label className="inline-flex items-center justify-center cursor-pointer p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() =>
+                                togglePermission(pageMod.key, act.key)
+                              }
+                              className="sr-only"
+                            />
+                            <div
+                              className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                                isChecked
+                                  ? "bg-[#0088ff] border-[#0088ff] text-white shadow-xs scale-105"
+                                  : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-[#0088ff]"
+                              }`}
+                            >
+                              {isChecked && (
+                                <Check className="h-3.5 w-3.5 stroke-[3]" />
+                              )}
+                            </div>
+                          </label>
+                        </td>
+                      );
+                    })}
+
+                    {/* Toggle Entire Page Row */}
+                    <td className="py-3.5 px-3 text-center align-middle">
+                      <button
+                        type="button"
+                        onClick={() => toggleRowAll(pageMod.key)}
+                        className="inline-flex items-center justify-center text-slate-500 hover:text-[#0088ff] p-1.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
+                        title={
+                          isAllSelected
+                            ? "Unselect all page actions"
+                            : "Select all page actions"
+                        }
+                      >
+                        {isAllSelected ? (
+                          <CheckSquare className="h-4.5 w-4.5 text-[#0088ff]" />
+                        ) : (
+                          <Square className="h-4.5 w-4.5 text-slate-400" />
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

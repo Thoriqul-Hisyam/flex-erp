@@ -13,7 +13,20 @@ import {
   Users,
   Truck,
   Ruler,
+  Briefcase,
   Receipt,
+  Boxes,
+  ArrowLeftRight,
+  ClipboardList,
+  ClipboardCheck,
+  FileText,
+  ShoppingCart,
+  PackageCheck,
+  FileSpreadsheet,
+  ShoppingBag,
+  UserCheck,
+  Car,
+  Layers,
   UserCog,
   ShieldCheck,
   History,
@@ -97,6 +110,27 @@ const navItems: NavItem[] = [
     category: "MASTER_DATA",
   },
   {
+    icon: Briefcase,
+    href: "/master-data/departments",
+    label: "Departments / Divisi",
+    pageKey: "md_departments",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: UserCheck,
+    href: "/master-data/employees",
+    label: "Data Karyawan",
+    pageKey: "md_employees",
+    category: "MASTER_DATA",
+  },
+  {
+    icon: Car,
+    href: "/master-data/vehicles",
+    label: "Armada Kendaraan",
+    pageKey: "md_vehicles",
+    category: "MASTER_DATA",
+  },
+  {
     icon: Users,
     href: "/master-data/customers",
     label: "Customers",
@@ -109,6 +143,104 @@ const navItems: NavItem[] = [
     label: "Suppliers",
     pageKey: "crm_suppliers",
     category: "CRM",
+  },
+  {
+    icon: Boxes,
+    href: "/inventory/stocks",
+    label: "Warehouse Stocks",
+    pageKey: "inv_stocks",
+    category: "INVENTORY",
+  },
+  {
+    icon: ArrowLeftRight,
+    href: "/inventory/movements",
+    label: "Stock Movements",
+    pageKey: "inv_movements",
+    category: "INVENTORY",
+  },
+  {
+    icon: ClipboardList,
+    href: "/inventory/adjustments",
+    label: "Stock Adjustments",
+    pageKey: "inv_adjustments",
+    category: "INVENTORY",
+  },
+  {
+    icon: Layers,
+    href: "/inventory/transfers",
+    label: "Stock Transfers",
+    pageKey: "inv_transfers",
+    category: "INVENTORY",
+  },
+  {
+    icon: History,
+    href: "/inventory/batches",
+    label: "Batch & Expiry",
+    pageKey: "inv_batches",
+    category: "INVENTORY",
+  },
+  {
+    icon: ClipboardCheck,
+    href: "/inventory/opnames",
+    label: "Stock Opname",
+    pageKey: "inv_opnames",
+    category: "INVENTORY",
+  },
+  {
+    icon: FileText,
+    href: "/purchasing/requests",
+    label: "Purchase Requests",
+    pageKey: "pur_requests",
+    category: "PURCHASING",
+  },
+  {
+    icon: ShoppingCart,
+    href: "/purchasing/orders",
+    label: "Purchase Orders",
+    pageKey: "pur_orders",
+    category: "PURCHASING",
+  },
+  {
+    icon: PackageCheck,
+    href: "/purchasing/receipts",
+    label: "Goods Receipt (Stock IN)",
+    pageKey: "pur_receipts",
+    category: "PURCHASING",
+  },
+  {
+    icon: FileSpreadsheet,
+    href: "/purchasing/invoices",
+    label: "Supplier Invoices",
+    pageKey: "pur_invoices",
+    category: "PURCHASING",
+  },
+  {
+    icon: FileText,
+    href: "/sales/quotations",
+    label: "Sales Quotations",
+    pageKey: "sal_quotations",
+    category: "SALES",
+  },
+  {
+    icon: ShoppingBag,
+    href: "/sales/orders",
+    label: "Sales Orders",
+    pageKey: "sal_orders",
+    category: "SALES",
+  },
+  {
+    icon: Truck,
+    href: "/sales/deliveries",
+    label: "Delivery Orders (Surat Jalan)",
+    pageKey: "sal_deliveries",
+    category: "SALES",
+  },
+  {
+    icon: Receipt,
+    href: "/sales/invoices",
+    label: "Customer Invoices",
+    pageKey: "sal_invoices",
+    category: "SALES",
   },
   {
     icon: UserCog,
@@ -166,9 +298,9 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="sticky top-3 h-[calc(100vh-1.5rem)] w-16 shrink-0 flex flex-col items-center justify-between py-2 select-none z-40">
+    <aside className="sticky top-3 h-[calc(100vh-1.5rem)] w-16 shrink-0 flex flex-col items-center justify-between py-1 select-none z-40 gap-3">
       {/* Top Sun/Moon Theme Switcher Pill */}
-      <div className="bg-white dark:bg-[#12161f] p-1 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col gap-1.5">
+      <div className="bg-white dark:bg-[#12161f] p-1.5 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col gap-1.5 shrink-0 mb-1">
         <button
           onClick={() => theme !== "light" && toggleTheme()}
           className={cn(
@@ -196,36 +328,47 @@ export function Sidebar() {
       </div>
 
       {/* Main Center Floating Navigation Card */}
-      <div className="bg-white dark:bg-[#12161f] px-2 py-3.5 rounded-[26px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-2 max-h-[calc(100vh-140px)] overflow-y-auto scrollbar-none">
-        {visibleItems.map((item) => {
+      <div className="bg-white dark:bg-[#12161f] px-2 py-3 rounded-[26px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-1.5 h-auto shrink-0 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-none my-1">
+        {visibleItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className={cn(
-                "h-10 w-10 shrink-0 rounded-2xl flex items-center justify-center transition-all cursor-pointer relative group",
-                isActive
-                  ? "bg-[#0088ff] text-white shadow-md shadow-blue-500/25"
-                  : "text-[#8a94a6] hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
-              )}
-            >
-              <Icon className="h-5 w-5" />
+          // Check if category changed from previous item to insert a sleek divider
+          const prevItem = visibleItems[index - 1];
+          const showDivider = prevItem && prevItem.category !== item.category;
 
-              {/* Tooltip on hover */}
-              <span className="absolute left-14 px-2.5 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                {item.label}
-              </span>
-            </Link>
+          return (
+            <React.Fragment key={item.href}>
+              {showDivider && (
+                <div className="w-6 h-[1px] bg-slate-200 dark:bg-slate-800 my-1 rounded-full shrink-0" />
+              )}
+              <Link
+                href={item.href}
+                title={item.label}
+                className={cn(
+                  "h-9 w-9 shrink-0 rounded-2xl flex items-center justify-center transition-all cursor-pointer relative group",
+                  isActive
+                    ? "bg-[#0088ff] text-white shadow-md shadow-blue-500/25 scale-105"
+                    : "text-[#8a94a6] hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
+                )}
+              >
+                <Icon className="h-4.5 w-4.5" />
+
+                {/* Tooltip on hover */}
+                <span className="absolute left-12 px-2.5 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity shadow-xl z-50 flex items-center gap-1.5">
+                  <span className="text-[9px] uppercase font-mono text-blue-400 bg-blue-950/60 px-1 py-0.5 rounded">
+                    {item.category}
+                  </span>
+                  {item.label}
+                </span>
+              </Link>
+            </React.Fragment>
           );
         })}
       </div>
 
       {/* Bottom Help & Logout Floating Card */}
-      <div className="bg-white dark:bg-[#12161f] p-1.5 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-1.5">
+      <div className="bg-white dark:bg-[#12161f] p-1.5 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-1.5 shrink-0 mt-1">
         <button
           className="h-8 w-8 rounded-full flex items-center justify-center text-[#8a94a6] hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
           title="Help & Support"

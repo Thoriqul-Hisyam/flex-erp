@@ -1,10 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { LayoutGrid, Package, Users, ShieldCheck } from "lucide-react";
+import { LayoutGrid, Package, Users, ShieldCheck, Boxes, ShoppingCart, ShoppingBag } from "lucide-react";
 import { getUserSessionDataAction } from "@/app/actions/crud-actions";
 
-export type ModuleCategory = "ALL" | "MASTER_DATA" | "CRM" | "SYSTEM";
+export type ModuleCategory =
+  | "ALL"
+  | "MASTER_DATA"
+  | "CRM"
+  | "SYSTEM"
+  | "INVENTORY"
+  | "PURCHASING"
+  | "SALES";
 
 export interface UserPermissionContext {
   permissionsMap: Record<string, string[]>;
@@ -14,6 +21,7 @@ export interface UserPermissionContext {
   userId?: string;
   userName?: string;
   companyName?: string;
+  companyLogoUrl?: string;
   branchName?: string;
   warehouseName?: string;
   tenantCode?: string;
@@ -48,10 +56,13 @@ export const MODULE_OPTIONS: ModuleOption[] = [
       "md_products",
       "md_categories",
       "md_units",
+      "md_departments",
       "md_companies",
       "md_branches",
       "md_warehouses",
       "md_taxes",
+      "md_employees",
+      "md_vehicles",
     ],
   },
   {
@@ -61,6 +72,38 @@ export const MODULE_OPTIONS: ModuleOption[] = [
     description: "Direktori Pelanggan & Pemasok / Supplier",
     icon: Users,
     pageKeys: ["crm_customers", "crm_suppliers"],
+  },
+  {
+    id: "INVENTORY",
+    label: "Inventory & Warehouse",
+    shortLabel: "Inventory",
+    description:
+      "Stok per Gudang, Movement Ledger, Adjustment, Transfer & Batch/Expiry",
+    icon: Boxes,
+    pageKeys: [
+      "inv_stocks",
+      "inv_movements",
+      "inv_adjustments",
+      "inv_transfers",
+      "inv_batches",
+      "inv_opnames",
+    ],
+  },
+  {
+    id: "PURCHASING",
+    label: "Purchasing & Procurement",
+    shortLabel: "Purchasing",
+    description: "Purchase Request, PO, Goods Receipt & Supplier Invoices",
+    icon: ShoppingCart,
+    pageKeys: ["pur_requests", "pur_orders", "pur_receipts", "pur_invoices"],
+  },
+  {
+    id: "SALES",
+    label: "Sales & Distribution",
+    shortLabel: "Sales",
+    description: "Sales Quotations, Sales Orders, Delivery Orders & Customer Invoices",
+    icon: ShoppingBag,
+    pageKeys: ["sal_quotations", "sal_orders", "sal_deliveries", "sal_invoices"],
   },
   {
     id: "SYSTEM",
@@ -126,6 +169,7 @@ export function ModuleProvider({ children }: { children: React.ReactNode }) {
             userId: res.data.userId,
             userName: res.data.userName,
             companyName: res.data.companyName,
+            companyLogoUrl: res.data.companyLogoUrl,
             branchName: res.data.branchName,
             warehouseName: res.data.warehouseName,
             tenantCode: res.data.tenantCode,
@@ -236,6 +280,7 @@ export function usePermissionContext() {
     userId: ctx.userContext.userId,
     userName: ctx.userContext.userName,
     companyName: ctx.userContext.companyName,
+    companyLogoUrl: ctx.userContext.companyLogoUrl,
     branchName: ctx.userContext.branchName,
     warehouseName: ctx.userContext.warehouseName,
     tenantCode: ctx.userContext.tenantCode,

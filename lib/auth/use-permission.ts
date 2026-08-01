@@ -15,6 +15,7 @@ export interface PermissionState {
   isLoading: boolean;
   userName?: string;
   companyName?: string;
+  companyLogoUrl?: string;
   branchName?: string;
   warehouseName?: string;
   tenantCode?: string;
@@ -27,12 +28,54 @@ const ENTITY_TO_PAGE_KEY_MAP: Record<string, string> = {
   productcategory: "md_categories",
   product: "md_products",
   unit: "md_units",
+  department: "md_departments",
+  departments: "md_departments",
   customer: "crm_customers",
   supplier: "crm_suppliers",
   tax: "md_taxes",
+  employee: "md_employees",
+  employees: "md_employees",
+  vehicle: "md_vehicles",
+  vehicles: "md_vehicles",
   user: "sys_users",
   role: "sys_roles",
   audit: "sys_audit",
+  stock: "inv_stocks",
+  stocks: "inv_stocks",
+  movement: "inv_movements",
+  movements: "inv_movements",
+  adjustment: "inv_adjustments",
+  adjustments: "inv_adjustments",
+  transfer: "inv_transfers",
+  transfers: "inv_transfers",
+  batch: "inv_batches",
+  batches: "inv_batches",
+  opname: "inv_opnames",
+  opnames: "inv_opnames",
+  inventory: "inv_stocks",
+  purchaserequest: "pur_requests",
+  purchaserequests: "pur_requests",
+  pr: "pur_requests",
+  purchaseorder: "pur_orders",
+  purchaseorders: "pur_orders",
+  po: "pur_orders",
+  goodsreceipt: "pur_receipts",
+  goodsreceipts: "pur_receipts",
+  gr: "pur_receipts",
+  supplierinvoice: "pur_invoices",
+  supplierinvoices: "pur_invoices",
+  salesquotation: "sal_quotations",
+  salesquotations: "sal_quotations",
+  sq: "sal_quotations",
+  salesorder: "sal_orders",
+  salesorders: "sal_orders",
+  so: "sal_orders",
+  deliveryorder: "sal_deliveries",
+  deliveryorders: "sal_deliveries",
+  do: "sal_deliveries",
+  customerinvoice: "sal_invoices",
+  customerinvoices: "sal_invoices",
+  purchasing: "pur_orders",
 };
 
 /**
