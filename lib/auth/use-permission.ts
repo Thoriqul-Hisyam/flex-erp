@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { getSessionPermissionsAction } from "@/app/actions/crud-actions";
-
+import { usePermissionContext } from "@/components/providers/module-provider";
 export interface PermissionState {
   canRead: boolean;
   canCreate: boolean;
@@ -52,81 +51,63 @@ export function resolvePageKey(entityOrPath: string): string {
 }
 
 /**
- * Client hook that evaluates the logged-in user's RBAC permissions
- * for a given entity/page by calling the server action which reads
- * the nexus_session cookie and resolves user → role → permissions.
+ * Client hook that evaluates the logged-in user's RBAC permissions for a given
+ * entity/page. Instead of issuing its own server action per call, it reads from
+ * the shared permission context provided once by ModuleProvider — keeping the
+ * app's network/DB footprint minimal (one consolidated request per mount).
  */
 export function usePermission(entityOrPageKey: string): PermissionState {
   const pageKey = resolvePageKey(entityOrPageKey);
-  const [state, setState] = React.useState<PermissionState>({
-    canRead: false,
-    canCreate: false,
-    canUpdate: false,
-    canDelete: false,
-    canApprove: false,
-    canExport: false,
-    roleCode: "",
-    roleName: "",
-    isSuperAdmin: false,
-    isLoading: true,
-  });
+  const {
+    permissionsMap,
+    isSuperAdmin,
+    isReady,
+    roleCode,
+    roleName,
+    userName,
+    companyName,
+    branchName,
+    warehouseName,
+    tenantCode,
+  } = usePermissionContext();
 
-  React.useEffect(() => {
-    let isMounted = true;
+  return React.useMemo(() => {
+    const actions = permissionsMap[pageKey] || [];
+    const canRead = isSuperAdmin || actions.includes("read");
+    const canCreate = isSuperAdmin || actions.includes("create");
+    const canUpdate = isSuperAdmin || actions.includes("update");
+    const canDelete = isSuperAdmin || actions.includes("delete");
+    const canApprove = isSuperAdmin || actions.includes("approve");
+    const canExport = isSuperAdmin || actions.includes("export");
 
-    async function evaluatePermissions() {
-      try {
-        const res = await getSessionPermissionsAction(pageKey);
-
-        if (!isMounted) return;
-
-        if (res.success && res.data) {
-          setState({
-            canRead: !!res.data.canRead,
-            canCreate: !!res.data.canCreate,
-            canUpdate: !!res.data.canUpdate,
-            canDelete: !!res.data.canDelete,
-            canApprove: !!res.data.canApprove,
-            canExport: !!res.data.canExport,
-            roleCode: res.data.roleCode || "",
-            roleName: res.data.roleName || "",
-            isSuperAdmin: !!res.data.isSuperAdmin,
-            isLoading: false,
-            userName: res.data.userName,
-            companyName: res.data.companyName,
-            branchName: res.data.branchName,
-            warehouseName: res.data.warehouseName,
-            tenantCode: res.data.tenantCode,
-          });
-        } else {
-          // Failed to resolve session — deny all access (fail-closed)
-          setState({
-            canRead: false,
-            canCreate: false,
-            canUpdate: false,
-            canDelete: false,
-            canApprove: false,
-            canExport: false,
-            roleCode: "",
-            roleName: "",
-            isSuperAdmin: false,
-            isLoading: false,
-          });
-        }
-      } catch (err) {
-        console.warn("[usePermission] Error:", err);
-        if (isMounted) {
-          setState((prev) => ({ ...prev, isLoading: false }));
-        }
-      }
-    }
-
-    evaluatePermissions();
-
-    return () => {
-      isMounted = false;
+    return {
+      canRead,
+      canCreate,
+      canUpdate,
+      canDelete,
+      canApprove,
+      canExport,
+      roleCode: roleCode || "",
+      roleName: roleName || "",
+      isSuperAdmin,
+      isLoading: !isReady,
+      userName,
+      companyName,
+      branchName,
+      warehouseName,
+      tenantCode,
     };
-  }, [pageKey]);
-
-  return state;
+  }, [
+    pageKey,
+    permissionsMap,
+    isSuperAdmin,
+    isReady,
+    roleCode,
+    roleName,
+    userName,
+    companyName,
+    branchName,
+    warehouseName,
+    tenantCode,
+  ]);
 }

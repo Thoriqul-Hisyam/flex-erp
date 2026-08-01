@@ -3,7 +3,7 @@
 import { db, schema } from "@/db";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { eq } from "drizzle-orm";
-import { getSessionUser } from "@/lib/auth/session";
+import { getSessionUser, getUserContext } from "@/lib/auth/session";
 
 export interface ActionResult<T = any> {
   success: boolean;
@@ -867,163 +867,13 @@ export async function fetchRolePermissionsAction(
 }
 
 /**
- * Server Action: Resolve current logged-in user from nexus_session cookie,
- * look up their role, and return their permission state for a given pageKey.
+ * Server Action: Single consolidated call that returns the logged-in user's
+ * context + full permissions map. With React `cache()` on the underlying
+ * session/context helpers, this is memory-cheap and runs in a single request.
+ * ModuleProvider calls this ONCE per app mount; every other component reads
+ * the shared result from context instead of issuing its own request.
  */
-export async function getSessionPermissionsAction(
-  pageKey: string,
-): Promise<ActionResult> {
-  try {
-    // Resolve the logged-in user from the server-side session cookie.
-    const user = await getSessionUser();
-
-    if (!user) {
-      return { success: false, error: "No valid session found" };
-    }
-
-    const userRecord = user;
-
-    // Query user context (Company, Branch, Warehouse, Tenant)
-    let companyName = "PT Lefatech Indonesia";
-    let branchName = "Lefatech Head Office Jakarta";
-    let warehouseName = "Lefatech Central Warehouse";
-    let tenantCode = "LEFATECH-GLOBAL";
-
-    if (userRecord.companyId) {
-      const [cmp] = await db
-        .select()
-        .from(schema.companies)
-        .where(eq(schema.companies.id, userRecord.companyId));
-      if (cmp) companyName = cmp.name;
-    }
-    if (userRecord.branchId) {
-      const [brn] = await db
-        .select()
-        .from(schema.branches)
-        .where(eq(schema.branches.id, userRecord.branchId));
-      if (brn) branchName = brn.name;
-    }
-    if (userRecord.tenantId) {
-      const [tnt] = await db
-        .select()
-        .from(schema.tenants)
-        .where(eq(schema.tenants.id, userRecord.tenantId));
-      if (tnt) tenantCode = tnt.code;
-    }
-
-    // 3. Resolve role
-    let roleCode = "UNKNOWN";
-    let roleName = userRecord.role || "Unknown";
-    let isSuperAdmin = false;
-
-    if (userRecord.roleId) {
-      const [roleRecord] = await db
-        .select()
-        .from(schema.roles)
-        .where(eq(schema.roles.id, userRecord.roleId));
-
-      if (roleRecord) {
-        roleCode = roleRecord.code || "UNKNOWN";
-        roleName = roleRecord.name || roleName;
-        isSuperAdmin =
-          roleCode === "SUPER_ADMIN" ||
-          roleName.toLowerCase().includes("super admin");
-      }
-    } else {
-      // No roleId assigned — check legacy role column
-      isSuperAdmin = (userRecord.role || "")
-        .toLowerCase()
-        .includes("super admin");
-      if (isSuperAdmin) roleCode = "SUPER_ADMIN";
-    }
-
-    const sessionContextData = {
-      roleCode,
-      roleName,
-      isSuperAdmin,
-      userId: userRecord.id,
-      userName: userRecord.name,
-      companyName,
-      branchName,
-      warehouseName,
-      tenantCode,
-    };
-
-    // 4. If Super Admin, grant all permissions
-    if (isSuperAdmin) {
-      return {
-        success: true,
-        data: {
-          canRead: true,
-          canCreate: true,
-          canUpdate: true,
-          canDelete: true,
-          canApprove: true,
-          canExport: true,
-          ...sessionContextData,
-        },
-      };
-    }
-
-    // 5. Fetch permissions matrix for this role
-    if (!userRecord.roleId) {
-      // No role assigned = no permissions (read-only fallback)
-      return {
-        success: true,
-        data: {
-          canRead: false,
-          canCreate: false,
-          canUpdate: false,
-          canDelete: false,
-          canApprove: false,
-          canExport: false,
-          ...sessionContextData,
-        },
-      };
-    }
-
-    const perms = await db
-      .select()
-      .from(schema.permissions)
-      .where(eq(schema.permissions.roleId, userRecord.roleId));
-
-    const permMap: Record<string, string[]> = {};
-    perms.forEach((p: any) => {
-      if (p.module) {
-        permMap[p.module] = Array.isArray(p.actions) ? p.actions : [];
-      }
-    });
-
-    const pageActions: string[] = permMap[pageKey] || [];
-
-    return {
-      success: true,
-      data: {
-        canRead: pageActions.includes("read"),
-        canCreate: pageActions.includes("create"),
-        canUpdate: pageActions.includes("update"),
-        canDelete: pageActions.includes("delete"),
-        canApprove: pageActions.includes("approve"),
-        canExport: pageActions.includes("export"),
-        ...sessionContextData,
-      },
-    };
-  } catch (err: any) {
-    console.error("[getSessionPermissionsAction] Error:", err?.message || err);
-    // Fail-closed: deny access on error
-    return {
-      success: false,
-      error: err?.message || "Permission evaluation failed",
-    };
-  }
-}
-
-/**
- * Server Action: Return the full permissions map + role info for the logged-in user.
- * Used by sidebar to filter which pages to show based on read access.
- * Returns { isSuperAdmin, roleCode, roleName, permissionsMap: Record<string, string[]> }
- */
-export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
+export async function getUserSessionDataAction(): Promise<ActionResult> {
   try {
     const user = await getSessionUser();
 
@@ -1031,71 +881,23 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
       return { success: false, error: "No valid session cookie" };
     }
 
-    const userRecord = user;
-
-    let companyName = "PT Lefatech Indonesia";
-    let branchName = "Lefatech Head Office Jakarta";
-    let warehouseName = "Lefatech Central Warehouse";
-    let tenantCode = "LEFATECH-GLOBAL";
-
-    if (userRecord.companyId) {
-      const [cmp] = await db
-        .select()
-        .from(schema.companies)
-        .where(eq(schema.companies.id, userRecord.companyId));
-      if (cmp) companyName = cmp.name;
-    }
-    if (userRecord.branchId) {
-      const [brn] = await db
-        .select()
-        .from(schema.branches)
-        .where(eq(schema.branches.id, userRecord.branchId));
-      if (brn) branchName = brn.name;
-    }
-    if (userRecord.tenantId) {
-      const [tnt] = await db
-        .select()
-        .from(schema.tenants)
-        .where(eq(schema.tenants.id, userRecord.tenantId));
-      if (tnt) tenantCode = tnt.code;
-    }
-
-    let roleCode = "UNKNOWN";
-    let roleName = userRecord.role || "Unknown";
-    let isSuperAdmin = false;
-
-    if (userRecord.roleId) {
-      const [roleRecord] = await db
-        .select()
-        .from(schema.roles)
-        .where(eq(schema.roles.id, userRecord.roleId));
-
-      if (roleRecord) {
-        roleCode = roleRecord.code || "UNKNOWN";
-        roleName = roleRecord.name || roleName;
-        isSuperAdmin =
-          roleCode === "SUPER_ADMIN" ||
-          roleName.toLowerCase().includes("super admin");
-      }
-    } else {
-      isSuperAdmin = (userRecord.role || "")
-        .toLowerCase()
-        .includes("super admin");
-      if (isSuperAdmin) roleCode = "SUPER_ADMIN";
-    }
+    const ctx = await getUserContext(user);
+    const isSuperAdmin = ctx.isSuperAdmin;
 
     const contextData = {
       isSuperAdmin,
-      roleCode,
-      roleName,
-      userId: userRecord.id,
-      userName: userRecord.name,
-      companyName,
-      branchName,
-      warehouseName,
-      tenantCode,
+      roleCode: ctx.roleCode,
+      roleName: ctx.roleName,
+      userId: ctx.userId,
+      userName: ctx.userName,
+      companyName: ctx.companyName,
+      branchName: ctx.branchName,
+      warehouseName: ctx.warehouseName,
+      tenantCode: ctx.tenantCode,
+      tenantName: ctx.tenantName,
     };
 
+    // Super Admin: full access to all modules
     if (isSuperAdmin) {
       const fullPermsMap: Record<string, string[]> = {};
       [
@@ -1128,17 +930,14 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
       };
     }
 
-    if (!userRecord.roleId) {
-      return {
-        success: true,
-        data: { ...contextData, permissionsMap: {} },
-      };
+    if (!user.roleId) {
+      return { success: true, data: { ...contextData, permissionsMap: {} } };
     }
 
     const perms = await db
       .select()
       .from(schema.permissions)
-      .where(eq(schema.permissions.roleId, userRecord.roleId));
+      .where(eq(schema.permissions.roleId, user.roleId));
 
     const permissionsMap: Record<string, string[]> = {};
     perms.forEach((p: any) => {
@@ -1147,15 +946,9 @@ export async function getSessionAllPermissionsAction(): Promise<ActionResult> {
       }
     });
 
-    return {
-      success: true,
-      data: { ...contextData, permissionsMap },
-    };
+    return { success: true, data: { ...contextData, permissionsMap } };
   } catch (err: any) {
-    console.error(
-      "[getSessionAllPermissionsAction] Error:",
-      err?.message || err,
-    );
+    console.error("[getUserSessionDataAction] Error:", err?.message || err);
     return { success: false, error: err?.message || "Failed" };
   }
 }

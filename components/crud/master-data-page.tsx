@@ -766,8 +766,8 @@ export function MasterDataPage<T extends MasterDataItem>({
                 }
                 className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors"
               >
-                <option value="ACTIVE">✅ ACTIVE (Operasional)</option>
-                <option value="INACTIVE">⛔ INACTIVE (Non-Aktif)</option>
+                <option value="ACTIVE">ACTIVE (Operasional)</option>
+                <option value="INACTIVE">INACTIVE (Non-Aktif)</option>
               </select>
             </div>
           </div>

@@ -24,10 +24,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { getSessionAllPermissionsAction } from "@/app/actions/crud-actions";
 import { signOutAction } from "@/app/actions/auth-actions";
 import {
   useModule,
+  usePermissionContext,
   ModuleCategory,
 } from "@/components/providers/module-provider";
 
@@ -139,42 +139,18 @@ export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const { selectedModules } = useModule();
 
-  const [permissionFilteredItems, setPermissionFilteredItems] =
-    React.useState<NavItem[]>(navItems);
+  const { permissionsMap, isSuperAdmin } = usePermissionContext();
 
-  // Load RBAC permissions
-  React.useEffect(() => {
-    let isMounted = true;
+  // Filter nav items by read permission from shared context (no extra request).
+  const permissionFilteredItems = React.useMemo(() => {
+    if (isSuperAdmin) return navItems;
 
-    async function loadPermissions() {
-      try {
-        const res = await getSessionAllPermissionsAction();
-        if (!isMounted) return;
-
-        if (res.success && res.data) {
-          if (res.data.isSuperAdmin) {
-            setPermissionFilteredItems(navItems);
-          } else {
-            const permMap: Record<string, string[]> =
-              res.data.permissionsMap || {};
-            const filtered = navItems.filter((item) => {
-              if (item.pageKey === null) return true;
-              const actions = permMap[item.pageKey];
-              return actions && actions.includes("read");
-            });
-            setPermissionFilteredItems(filtered);
-          }
-        }
-      } catch (err) {
-        console.warn("[Sidebar] Permission load error:", err);
-      }
-    }
-
-    loadPermissions();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    return navItems.filter((item) => {
+      if (item.pageKey === null) return true;
+      const actions = permissionsMap[item.pageKey];
+      return Array.isArray(actions) && actions.includes("read");
+    });
+  }, [isSuperAdmin, permissionsMap]);
 
   // Filter items based on selected modules array (Multi-select support)
   const visibleItems = React.useMemo(() => {

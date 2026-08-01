@@ -2,9 +2,23 @@
 
 import * as React from "react";
 import { LayoutGrid, Package, Users, ShieldCheck } from "lucide-react";
-import { getSessionAllPermissionsAction } from "@/app/actions/crud-actions";
+import { getUserSessionDataAction } from "@/app/actions/crud-actions";
 
 export type ModuleCategory = "ALL" | "MASTER_DATA" | "CRM" | "SYSTEM";
+
+export interface UserPermissionContext {
+  permissionsMap: Record<string, string[]>;
+  isSuperAdmin: boolean;
+  roleCode: string;
+  roleName: string;
+  userId?: string;
+  userName?: string;
+  companyName?: string;
+  branchName?: string;
+  warehouseName?: string;
+  tenantCode?: string;
+  tenantName?: string;
+}
 
 export interface ModuleOption {
   id: ModuleCategory;
@@ -30,7 +44,15 @@ export const MODULE_OPTIONS: ModuleOption[] = [
     shortLabel: "Master Data",
     description: "Produk, Kategori, Satuan, Perusahaan, Cabang, Gudang & Pajak",
     icon: Package,
-    pageKeys: ["md_products", "md_categories", "md_units", "md_companies", "md_branches", "md_warehouses", "md_taxes"],
+    pageKeys: [
+      "md_products",
+      "md_categories",
+      "md_units",
+      "md_companies",
+      "md_branches",
+      "md_warehouses",
+      "md_taxes",
+    ],
   },
   {
     id: "CRM",
@@ -57,6 +79,8 @@ interface ModuleContextType {
   availableModules: ModuleOption[];
   isSuperAdmin: boolean;
   isLoadingPermissions: boolean;
+  permissionsMap: Record<string, string[]>;
+  userContext: Partial<UserPermissionContext>;
 }
 
 const ModuleContext = React.createContext<ModuleContextType>({
@@ -66,28 +90,52 @@ const ModuleContext = React.createContext<ModuleContextType>({
   availableModules: [],
   isSuperAdmin: false,
   isLoadingPermissions: true,
+  permissionsMap: {},
+  userContext: {},
 });
 
 export function ModuleProvider({ children }: { children: React.ReactNode }) {
-  const [selectedModules, setSelectedModules] = React.useState<ModuleCategory[]>(["ALL"]);
-  const [userPermissions, setUserPermissions] = React.useState<Record<string, string[]>>({});
+  const [selectedModules, setSelectedModules] = React.useState<
+    ModuleCategory[]
+  >(["ALL"]);
+  const [permissionsMap, setPermissionsMap] = React.useState<
+    Record<string, string[]>
+  >({});
+  const [userContext, setUserContext] = React.useState<
+    Partial<UserPermissionContext>
+  >({});
   const [isSuperAdmin, setIsSuperAdmin] = React.useState(false);
   const [isLoadingPermissions, setIsLoadingPermissions] = React.useState(true);
 
-  // Load user permissions to filter available module options
+  // Load user permissions ONLY once per app mount (single consolidated request).
+  // Every other consumer (Sidebar, usePermission, header) reads from context below.
   React.useEffect(() => {
     let isMounted = true;
     async function loadPermissions() {
       try {
-        const res = await getSessionAllPermissionsAction();
+        const res = await getUserSessionDataAction();
         if (!isMounted) return;
 
         if (res.success && res.data) {
           setIsSuperAdmin(!!res.data.isSuperAdmin);
-          setUserPermissions(res.data.permissionsMap || {});
+          setPermissionsMap(res.data.permissionsMap || {});
+          setUserContext({
+            isSuperAdmin: !!res.data.isSuperAdmin,
+            roleCode: res.data.roleCode,
+            roleName: res.data.roleName,
+            userId: res.data.userId,
+            userName: res.data.userName,
+            companyName: res.data.companyName,
+            branchName: res.data.branchName,
+            warehouseName: res.data.warehouseName,
+            tenantCode: res.data.tenantCode,
+            tenantName: res.data.tenantName,
+          });
         } else {
-          // Fallback default session is Super Admin
-          setIsSuperAdmin(true);
+          // Fail-closed default: grant nothing
+          setIsSuperAdmin(false);
+          setPermissionsMap({});
+          setUserContext({});
         }
       } catch (err) {
         console.warn("[ModuleProvider] Error loading permissions:", err);
@@ -120,11 +168,11 @@ export function ModuleProvider({ children }: { children: React.ReactNode }) {
 
       // Check if user's role has 'read' permission on ANY page in this module
       return mod.pageKeys.some((pk) => {
-        const actions = userPermissions[pk];
+        const actions = permissionsMap[pk];
         return Array.isArray(actions) && actions.includes("read");
       });
     });
-  }, [isLoadingPermissions, isSuperAdmin, userPermissions]);
+  }, [isLoadingPermissions, isSuperAdmin, permissionsMap]);
 
   const toggleModule = (mod: ModuleCategory) => {
     if (mod === "ALL") {
@@ -159,6 +207,8 @@ export function ModuleProvider({ children }: { children: React.ReactNode }) {
         availableModules,
         isSuperAdmin,
         isLoadingPermissions,
+        permissionsMap,
+        userContext,
       }}
     >
       {children}
@@ -168,4 +218,27 @@ export function ModuleProvider({ children }: { children: React.ReactNode }) {
 
 export function useModule() {
   return React.useContext(ModuleContext);
+}
+
+/**
+ * Shared hook to read the consolidated user permission context (permissions map,
+ * role, super-admin) provided by ModuleProvider. If consumed OUTSIDE the
+ * provider (e.g. during SSR edge cases), it falls back to an empty loading state.
+ */
+export function usePermissionContext() {
+  const ctx = React.useContext(ModuleContext);
+  return {
+    permissionsMap: ctx.permissionsMap,
+    isSuperAdmin: ctx.isSuperAdmin,
+    isReady: !ctx.isLoadingPermissions,
+    roleCode: ctx.userContext.roleCode,
+    roleName: ctx.userContext.roleName,
+    userId: ctx.userContext.userId,
+    userName: ctx.userContext.userName,
+    companyName: ctx.userContext.companyName,
+    branchName: ctx.userContext.branchName,
+    warehouseName: ctx.userContext.warehouseName,
+    tenantCode: ctx.userContext.tenantCode,
+    tenantName: ctx.userContext.tenantName,
+  };
 }
