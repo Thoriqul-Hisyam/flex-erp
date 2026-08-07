@@ -2,14 +2,52 @@
 
 import { db, schema } from "@/db";
 import { logAuditEvent } from "@/lib/audit/logger";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getSessionUser, getUserContext } from "@/lib/auth/session";
+import { denyIfUnauthorized } from "@/lib/auth/server-permissions";
+import {
+  getScopeContext,
+  withScope,
+  assertBranchBelongsToCompany,
+  assertWarehouseBelongsToCompanyAndBranch,
+  type ScopeContext,
+} from "@/lib/auth/scope";
+import bcrypt from "bcryptjs";
 
 export interface ActionResult<T = any> {
   success: boolean;
   data?: T;
   error?: string;
   message?: string;
+}
+
+const UNIQUE_CONSTRAINT_MESSAGES: Record<string, string> = {
+  products_company_code_idx: "Kode produk ini sudah dipakai di perusahaan ini.",
+  products_company_sku_idx: "SKU ini sudah dipakai di perusahaan ini.",
+  customers_company_code_idx: "Kode customer ini sudah dipakai di perusahaan ini.",
+  suppliers_company_code_idx: "Kode supplier ini sudah dipakai di perusahaan ini.",
+  emp_company_code_idx: "Kode karyawan ini sudah dipakai di perusahaan ini.",
+};
+
+/**
+ * Turns a Postgres unique-violation (23505) into a friendly Indonesian
+ * message for known business-code constraints; falls back to the caller's
+ * default message for anything else.
+ */
+function friendlyDbErrorMessage(dbErr: any, fallback: string): string {
+  if (dbErr?.code === "23505") {
+    const constraint = dbErr.constraint as string | undefined;
+    if (constraint && UNIQUE_CONSTRAINT_MESSAGES[constraint]) {
+      return UNIQUE_CONSTRAINT_MESSAGES[constraint];
+    }
+    return "Data duplikat: kode/SKU ini sudah dipakai di perusahaan ini.";
+  }
+  return dbErr?.message || fallback;
+}
+
+async function getCurrentScope(): Promise<ScopeContext | null> {
+  const user = await getSessionUser();
+  return user ? getScopeContext(user) : null;
 }
 
 function getStoreKey(entityName: string): string {
@@ -49,6 +87,7 @@ function getStoreKey(entityName: string): string {
     normalized.includes("akses")
   )
     return "role";
+  if (normalized.includes("audit")) return "auditlog";
   return normalized;
 }
 
@@ -95,6 +134,7 @@ function getTableForEntity(entityName: string) {
     normalized.includes("akses")
   )
     return schema.roles;
+  if (normalized.includes("audit")) return schema.auditLogs;
   return null;
 }
 
@@ -129,39 +169,12 @@ async function getDefaultCompanyId(tenantId: string): Promise<string> {
       .insert(schema.companies)
       .values({
         tenantId,
-        code: "LEFA-ID",
-        name: "PT Lefatech Indonesia",
-        taxId: "01.234.567.8-012.000",
+        code: "DEFAULT-CO",
+        name: "Default Company",
         currency: "IDR",
       })
       .returning();
     return newComp.id;
-  } catch (err) {
-    return "00000000-0000-0000-0000-000000000000";
-  }
-}
-
-// Helper to resolve valid Branch UUID for PostgreSQL tables requiring branchId
-async function getDefaultBranchId(
-  tenantId: string,
-  companyId: string,
-): Promise<string> {
-  try {
-    const branchesList = await db.select().from(schema.branches).limit(1);
-    if (branchesList && branchesList[0]) return branchesList[0].id;
-    const [newBr] = await db
-      .insert(schema.branches)
-      .values({
-        tenantId,
-        companyId,
-        code: "JKT-HQ",
-        name: "Jakarta Central HQ",
-        address: "Jakarta",
-        phone: "+62 21 555 1111",
-        isHeadquarters: true,
-      })
-      .returning();
-    return newBr.id;
   } catch (err) {
     return "00000000-0000-0000-0000-000000000000";
   }
@@ -204,6 +217,7 @@ function sanitizePayloadForTable(
       "address",
       "logoUrl",
       "isDefault",
+      "highValuePoThreshold",
     ],
     branch: [
       "tenantId",
@@ -231,8 +245,10 @@ function sanitizePayloadForTable(
       "sku",
       "name",
       "category",
+      "categoryId",
       "type",
       "unit",
+      "unitId",
       "costPrice",
       "sellingPrice",
       "stockOnHand",
@@ -273,6 +289,7 @@ function sanitizePayloadForTable(
       "tenantId",
       "companyId",
       "branchId",
+      "warehouseId",
       "roleId",
       "role",
       "code",
@@ -306,9 +323,16 @@ export async function fetchRecordsAction(
 ): Promise<ActionResult> {
   const storeKey = getStoreKey(entityName);
   try {
+    const denied = await denyIfUnauthorized(entityName, "read");
+    if (denied) return denied;
+
     const table = getTableForEntity(entityName);
     if (table) {
-      const records = await db.select().from(table as any);
+      const scope = await getCurrentScope();
+      const whereClause = await withScope(table, scope);
+      const records = whereClause
+        ? await db.select().from(table as any).where(whereClause)
+        : await db.select().from(table as any);
 
       // Enrich relational data for Branch (companyId, companyName, city, warehousesCount)
       if (storeKey === "branch") {
@@ -332,7 +356,7 @@ export async function fetchRecordsAction(
           companyName:
             r.companyName ||
             compMap.get(r.companyId) ||
-            "PT Lefatech Indonesia",
+            "-",
           city: r.city || r.address || "",
           warehousesCount: warehouseCountMap.get(r.id) || 0,
         }));
@@ -358,11 +382,10 @@ export async function fetchRecordsAction(
           companyName:
             r.companyName ||
             compMap.get(r.companyId) ||
-            (compList[0]?.name ?? "PT Lefatech Indonesia"),
-          branchName:
-            r.branchName ||
-            branchMap.get(r.branchId) ||
-            (branchList[0]?.name ?? "Jakarta Central HQ"),
+            (compList[0]?.name ?? "-"),
+          branchName: r.branchId
+            ? r.branchName || branchMap.get(r.branchId) || "-"
+            : "Semua Cabang (Gudang Pusat)",
           location: r.location || r.address || "",
         }));
         return { success: true, data: enriched };
@@ -384,12 +407,9 @@ export async function fetchRecordsAction(
           if (w.name) whMap.set(w.name, w.name || w.code);
         });
 
-        const defaultWhName =
-          whList && whList[0] ? whList[0].name : "Gudang Utama Jakarta";
+        const defaultWhName = whList && whList[0] ? whList[0].name : "-";
         const defaultCatName =
-          catList && catList[0]
-            ? catList[0].name || catList[0].code
-            : "Hardware";
+          catList && catList[0] ? catList[0].name || catList[0].code : "-";
 
         const enriched = records.map((r: any) => {
           const rawCat = r.categoryId || r.category;
@@ -416,9 +436,11 @@ export async function fetchRecordsAction(
       if (storeKey === "user") {
         const compList = await db.select().from(schema.companies);
         const branchList = await db.select().from(schema.branches);
+        const warehouseList = await db.select().from(schema.warehouses);
         const roleList = await db.select().from(schema.roles);
         const compMap = new Map(compList.map((c) => [c.id, c.name]));
         const branchMap = new Map(branchList.map((b) => [b.id, b.name]));
+        const warehouseMap = new Map(warehouseList.map((w) => [w.id, w.name]));
         const roleMap = new Map<string, string>();
         roleList.forEach((r: any) => {
           if (r.id) roleMap.set(r.id, r.name);
@@ -430,20 +452,21 @@ export async function fetchRecordsAction(
           const rawRole = r.roleId || r.role || "Super Administrator";
           const resolvedRole =
             roleMap.get(rawRole) || rawRole || "Super Administrator";
+          // Never send the password hash to the client, even though it's
+          // hashed - it has no legitimate use in the browser.
+          const { passwordHash, ...rest } = r;
           return {
             status: r.status || "ACTIVE",
-            ...r,
+            ...rest,
             code: r.code || r.id?.slice(0, 8) || "USR-001",
             roleId: rawRole,
             role: resolvedRole,
             companyId: r.companyId,
             branchId: r.branchId,
-            companyName:
-              r.companyName ||
-              compMap.get(r.companyId) ||
-              "PT Lefatech Indonesia",
-            branchName:
-              r.branchName || branchMap.get(r.branchId) || "Jakarta Central HQ",
+            warehouseId: r.warehouseId,
+            companyName: r.companyId ? compMap.get(r.companyId) || "-" : "Semua Perusahaan",
+            branchName: r.branchId ? branchMap.get(r.branchId) || "-" : "Semua Cabang",
+            warehouseName: r.warehouseId ? warehouseMap.get(r.warehouseId) || "-" : "Semua Gudang",
           };
         });
         return { success: true, data: enriched };
@@ -494,6 +517,38 @@ export async function fetchRecordsAction(
         return { success: true, data: enriched };
       }
 
+      // Enrich Audit Log rows: resolve the actor's name and build a
+      // human-readable summary instead of raw userId/payload JSON.
+      if (storeKey === "auditlog") {
+        const userList = await db.select().from(schema.users);
+        const userMap = new Map(userList.map((u) => [u.id, u.name || u.email]));
+
+        const enriched = (records as any[])
+          .slice()
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .map((r: any) => {
+            const changedFields =
+              r.newPayload && typeof r.newPayload === "object"
+                ? Object.keys(r.newPayload).slice(0, 5).join(", ")
+                : "";
+            return {
+              id: r.id,
+              timestamp: r.createdAt ? new Date(r.createdAt).toLocaleString("id-ID") : "-",
+              createdAt: r.createdAt,
+              user: userMap.get(r.userId) || (r.userId ? "Pengguna Terhapus" : "System"),
+              userId: r.userId,
+              action: r.action,
+              entity: r.entity,
+              entityId: r.entityId,
+              details: changedFields
+                ? `${r.entity} #${String(r.entityId).slice(0, 8)} - field diubah: ${changedFields}`
+                : `${r.entity} #${String(r.entityId).slice(0, 8)}`,
+              ipAddress: r.ipAddress || "-",
+            };
+          });
+        return { success: true, data: enriched };
+      }
+
       return { success: true, data: records };
     }
   } catch (err: any) {
@@ -514,6 +569,9 @@ export async function createRecordAction(
   entityName: string,
   formData: Record<string, any>,
 ): Promise<ActionResult> {
+  const denied = await denyIfUnauthorized(entityName, "create");
+  if (denied) return denied;
+
   const storeKey = getStoreKey(entityName);
   const newItemId = `${storeKey}-${Date.now()}`;
   const newItem: Record<string, any> = {
@@ -530,7 +588,8 @@ export async function createRecordAction(
   try {
     const table = getTableForEntity(entityName);
     if (table) {
-      const tenantId = await getDefaultTenantId();
+      const scope = await getCurrentScope();
+      const tenantId = scope?.tenantId ?? (await getDefaultTenantId());
       const insertPayload: Record<string, any> = {
         code: newItem.code,
         name: formData.name || newItem.code,
@@ -538,9 +597,25 @@ export async function createRecordAction(
       };
       insertPayload.tenantId = tenantId;
 
-      // Map pure ID fields to SQL columns
-      if (formData.companyId) insertPayload.companyId = formData.companyId;
-      if (formData.branchId) insertPayload.branchId = formData.branchId;
+      // Map pure ID fields to SQL columns. For a User record, the admin is
+      // explicitly choosing ANOTHER person's scope via the form - never
+      // auto-stamp the acting admin's own company/branch/warehouse here,
+      // since a field left empty intentionally means "wider scope for this
+      // user," not "same as mine."
+      if (storeKey === "user") {
+        insertPayload.companyId = formData.companyId || null;
+        insertPayload.branchId = formData.branchId || null;
+        insertPayload.warehouseId = formData.warehouseId || null;
+      } else {
+        if (scope?.companyId) {
+          insertPayload.companyId = scope.companyId;
+        }
+        if (formData.companyId) insertPayload.companyId = formData.companyId;
+        if (scope?.branchId) {
+          insertPayload.branchId = scope.branchId;
+        }
+        if (formData.branchId) insertPayload.branchId = formData.branchId;
+      }
       if (formData.categoryId) insertPayload.category = formData.categoryId;
       if (formData.roleId) insertPayload.roleId = formData.roleId;
 
@@ -568,36 +643,36 @@ export async function createRecordAction(
         }
       }
 
-      // Automatically resolve branchId if not provided
+      // Resolve branchId by name if given - a warehouse legitimately has no
+      // branch at all (company-wide warehouse), so unlike company there is
+      // no forced fallback to "some default branch" here.
       if (
         storeKey === "warehouse" &&
         !insertPayload.branchId &&
-        insertPayload.companyId
+        formData.branchName
       ) {
-        if (formData.branchName) {
-          const matchingBr = await db
-            .select()
-            .from(schema.branches)
-            .where(eq(schema.branches.name, formData.branchName))
-            .limit(1);
-          if (matchingBr && matchingBr[0]) {
-            insertPayload.branchId = matchingBr[0].id;
-          }
-        }
-        if (!insertPayload.branchId) {
-          insertPayload.branchId = await getDefaultBranchId(
-            tenantId,
-            insertPayload.companyId,
-          );
+        const matchingBr = await db
+          .select()
+          .from(schema.branches)
+          .where(eq(schema.branches.name, formData.branchName))
+          .limit(1);
+        if (matchingBr && matchingBr[0]) {
+          insertPayload.branchId = matchingBr[0].id;
         }
       }
 
-      // Automatically resolve passwordHash for user
+      // Hash the password for a new user - never store it in plaintext,
+      // and never fall back to a fake/default hash that would leave the
+      // account permanently unable to log in.
       if (storeKey === "user") {
-        insertPayload.passwordHash =
-          formData.password ||
-          formData.passwordHash ||
-          "$2a$10$defaultHashForUser1234567890";
+        if (!formData.password || String(formData.password).length < 6) {
+          return {
+            success: false,
+            error: "Password wajib diisi (minimal 6 karakter) saat membuat akun baru.",
+          };
+        }
+        insertPayload.passwordHash = await bcrypt.hash(String(formData.password), 10);
+        delete insertPayload.password;
       }
 
       // Automatically fill code and sku for product
@@ -605,7 +680,48 @@ export async function createRecordAction(
         insertPayload.code =
           insertPayload.code || insertPayload.sku || `PRD-${Date.now()}`;
         insertPayload.sku = insertPayload.sku || insertPayload.code;
-        if (formData.categoryId) insertPayload.category = formData.categoryId;
+
+        // Resolve the real category/unit FK instead of stuffing the raw id
+        // into the free-text display column.
+        if (formData.categoryId) {
+          const [cat] = await db
+            .select()
+            .from(schema.productCategories)
+            .where(eq(schema.productCategories.id, formData.categoryId));
+          if (cat) {
+            insertPayload.categoryId = cat.id;
+            insertPayload.category = cat.name || cat.code;
+          }
+        }
+        if (formData.unit) {
+          const [unitRow] = await db
+            .select()
+            .from(schema.units)
+            .where(eq(schema.units.code, formData.unit));
+          if (unitRow) {
+            insertPayload.unitId = unitRow.id;
+            insertPayload.unit = unitRow.code;
+          }
+        }
+      }
+
+      // Relational-integrity guard: a branch/warehouse assigned to a User or
+      // Warehouse row must actually belong to the company (and branch) also
+      // being assigned - thrown Errors are caught below and surfaced as-is.
+      if (storeKey === "user") {
+        if (insertPayload.branchId) {
+          await assertBranchBelongsToCompany(insertPayload.branchId, insertPayload.companyId);
+        }
+        if (insertPayload.warehouseId) {
+          await assertWarehouseBelongsToCompanyAndBranch(
+            insertPayload.warehouseId,
+            insertPayload.companyId,
+            insertPayload.branchId,
+          );
+        }
+      }
+      if (storeKey === "warehouse" && insertPayload.branchId) {
+        await assertBranchBelongsToCompany(insertPayload.branchId, insertPayload.companyId);
       }
 
       const sanitizedPayload = sanitizePayloadForTable(
@@ -625,16 +741,30 @@ export async function createRecordAction(
       `[Drizzle ORM Insert ${entityName} Error]:`,
       dbErr?.message || dbErr,
     );
+    const friendlyMessage = friendlyDbErrorMessage(dbErr, `Gagal membuat ${entityName}.`);
+    return {
+      success: false,
+      error: dbErr?.message || "Failed to create record",
+      message: friendlyMessage,
+    };
   }
 
-  // Server-side audit trail log
+  const actor = await getSessionUser();
+  const auditTenantId = actor?.tenantId;
+  const auditUserId = actor?.id;
+
+  // Server-side audit trail log - skip rather than misattribute to a fake
+  // tenant if the session somehow evaporated mid-request.
+  if (auditTenantId) {
   await logAuditEvent({
-    tenantId: "tnt_acme_corp",
+    tenantId: auditTenantId,
+    userId: auditUserId,
     action: "CREATE",
     entity: entityName,
     entityId: String(newItem.id),
     newPayload: newItem,
   });
+  }
 
   return {
     success: true,
@@ -651,40 +781,123 @@ export async function updateRecordAction(
   id: string,
   formData: Record<string, any>,
 ): Promise<ActionResult> {
-  const updatePayload: Record<string, any> = { ...formData };
+  const denied = await denyIfUnauthorized(entityName, "update");
+  if (denied) return denied;
 
-  // Map pure ID fields to SQL columns
-  if (formData.companyId) updatePayload.companyId = formData.companyId;
-  if (formData.branchId) updatePayload.branchId = formData.branchId;
-  if (formData.categoryId) updatePayload.category = formData.categoryId;
+  const updatePayload: Record<string, any> = { ...formData };
+  const storeKey = getStoreKey(entityName);
+
+  // Map pure ID fields to SQL columns. For User/Warehouse, an empty field is
+  // an explicit choice to widen scope (see createRecordAction) - persist
+  // that as NULL instead of silently keeping whatever the row had before.
+  if (storeKey === "user") {
+    updatePayload.companyId = formData.companyId || null;
+    updatePayload.branchId = formData.branchId || null;
+    updatePayload.warehouseId = formData.warehouseId || null;
+  } else if (storeKey === "warehouse") {
+    if (formData.companyId) updatePayload.companyId = formData.companyId;
+    updatePayload.branchId = formData.branchId || null;
+  } else {
+    if (formData.companyId) updatePayload.companyId = formData.companyId;
+    if (formData.branchId) updatePayload.branchId = formData.branchId;
+  }
   if (formData.roleId) updatePayload.roleId = formData.roleId;
+
+  // Resolve the real category/unit FK instead of stuffing the raw id into
+  // the free-text display column.
+  if (storeKey === "product") {
+    if (formData.categoryId) {
+      const [cat] = await db
+        .select()
+        .from(schema.productCategories)
+        .where(eq(schema.productCategories.id, formData.categoryId));
+      if (cat) {
+        updatePayload.categoryId = cat.id;
+        updatePayload.category = cat.name || cat.code;
+      }
+    }
+    if (formData.unit) {
+      const [unitRow] = await db
+        .select()
+        .from(schema.units)
+        .where(eq(schema.units.code, formData.unit));
+      if (unitRow) {
+        updatePayload.unitId = unitRow.id;
+        updatePayload.unit = unitRow.code;
+      }
+    }
+  }
+
+  // Admin password reset: only hash + set passwordHash when a new password
+  // was actually typed - an empty field means "keep the current password."
+  if (storeKey === "user") {
+    if (formData.password && String(formData.password).trim().length > 0) {
+      if (String(formData.password).length < 6) {
+        return {
+          success: false,
+          error: "Password baru minimal 6 karakter.",
+        };
+      }
+      updatePayload.passwordHash = await bcrypt.hash(String(formData.password), 10);
+    }
+    delete updatePayload.password;
+  }
 
   // Attempt Drizzle ORM update
   try {
     const table = getTableForEntity(entityName);
     if (table) {
-      // Automatically resolve companyId if companyName is updated
-      if (formData.companyName && !updatePayload.companyId) {
-        const matchingComp = await db
-          .select()
-          .from(schema.companies)
-          .where(eq(schema.companies.name, formData.companyName))
-          .limit(1);
-        if (matchingComp && matchingComp[0]) {
-          updatePayload.companyId = matchingComp[0].id;
+      const scope = await getCurrentScope();
+      // Automatically resolve companyId/branchId from a companyName/branchName
+      // string - only for entities that don't already resolve their own id
+      // above (CSV import rows carry name strings, not ids). User and
+      // Warehouse rows already have authoritative id resolution at lines
+      // 793-799, including "" -> null for an intentional clear; running this
+      // fallback for them too would see the STALE companyName/branchName the
+      // edit form still carries from the original record (only the select's
+      // id field gets updated on change) and silently re-resolve the id right
+      // back to the old value, undoing the clear.
+      if (storeKey !== "user" && storeKey !== "warehouse") {
+        if (formData.companyName && !updatePayload.companyId) {
+          const matchingComp = await db
+            .select()
+            .from(schema.companies)
+            .where(eq(schema.companies.name, formData.companyName))
+            .limit(1);
+          if (matchingComp && matchingComp[0]) {
+            updatePayload.companyId = matchingComp[0].id;
+          }
+        }
+
+        if (formData.branchName && !updatePayload.branchId) {
+          const matchingBr = await db
+            .select()
+            .from(schema.branches)
+            .where(eq(schema.branches.name, formData.branchName))
+            .limit(1);
+          if (matchingBr && matchingBr[0]) {
+            updatePayload.branchId = matchingBr[0].id;
+          }
         }
       }
 
-      // Automatically resolve branchId if branchName is updated
-      if (formData.branchName && !updatePayload.branchId) {
-        const matchingBr = await db
-          .select()
-          .from(schema.branches)
-          .where(eq(schema.branches.name, formData.branchName))
-          .limit(1);
-        if (matchingBr && matchingBr[0]) {
-          updatePayload.branchId = matchingBr[0].id;
+      // Relational-integrity guard: a branch/warehouse assigned to a User or
+      // Warehouse row must actually belong to the company (and branch) also
+      // being assigned - thrown Errors are caught below and surfaced as-is.
+      if (storeKey === "user") {
+        if (updatePayload.branchId) {
+          await assertBranchBelongsToCompany(updatePayload.branchId, updatePayload.companyId);
         }
+        if (updatePayload.warehouseId) {
+          await assertWarehouseBelongsToCompanyAndBranch(
+            updatePayload.warehouseId,
+            updatePayload.companyId,
+            updatePayload.branchId,
+          );
+        }
+      }
+      if (storeKey === "warehouse" && updatePayload.branchId) {
+        await assertBranchBelongsToCompany(updatePayload.branchId, updatePayload.companyId);
       }
 
       const sanitizedPayload = sanitizePayloadForTable(
@@ -692,13 +905,14 @@ export async function updateRecordAction(
         updatePayload,
       );
       if (Object.keys(sanitizedPayload).length > 0) {
+        const whereClause = await withScope(table, scope, [eq((table as any).id, id)]);
         await db
           .update(table as any)
           .set({
             ...sanitizedPayload,
             updatedAt: new Date(),
           })
-          .where(eq((table as any).id, id));
+          .where(whereClause ?? eq((table as any).id, id));
       }
     }
   } catch (dbErr: any) {
@@ -706,6 +920,12 @@ export async function updateRecordAction(
       `[Drizzle ORM Update ${entityName} Error]:`,
       dbErr?.message || dbErr,
     );
+    const friendlyMessage = friendlyDbErrorMessage(dbErr, `Gagal memperbarui ${entityName}.`);
+    return {
+      success: false,
+      error: dbErr?.message || "Failed to update record",
+      message: friendlyMessage,
+    };
   }
 
   if (formData.isHeadquarters !== undefined) {
@@ -726,14 +946,22 @@ export async function updateRecordAction(
     updatedAt: new Date().toISOString(),
   };
 
-  // Server-side audit trail log
+  const actor = await getSessionUser();
+  const auditTenantId = actor?.tenantId;
+  const auditUserId = actor?.id;
+
+  // Server-side audit trail log - skip rather than misattribute to a fake
+  // tenant if the session somehow evaporated mid-request.
+  if (auditTenantId) {
   await logAuditEvent({
-    tenantId: "tnt_acme_corp",
+    tenantId: auditTenantId,
+    userId: auditUserId,
     action: "UPDATE",
     entity: entityName,
     entityId: id,
     newPayload: finalPayload,
   });
+  }
 
   return {
     success: true,
@@ -749,26 +977,44 @@ export async function deleteRecordAction(
   entityName: string,
   id: string,
 ): Promise<ActionResult> {
+  const denied = await denyIfUnauthorized(entityName, "delete");
+  if (denied) return denied;
+
   // Attempt Drizzle ORM delete
   try {
     const table = getTableForEntity(entityName);
     if (table) {
-      await db.delete(table as any).where(eq((table as any).id, id));
+      const scope = await getCurrentScope();
+      const whereClause = await withScope(table, scope, [eq((table as any).id, id)]);
+      await db.delete(table as any).where(whereClause ?? eq((table as any).id, id));
     }
   } catch (dbErr: any) {
     console.error(
       `[Drizzle ORM Delete ${entityName} Error]:`,
       dbErr?.message || dbErr,
     );
+    return {
+      success: false,
+      error: dbErr?.message || "Failed to delete record",
+      message: `Gagal menghapus ${entityName}.`,
+    };
   }
 
-  // Server-side audit trail log
+  const actor = await getSessionUser();
+  const auditTenantId = actor?.tenantId;
+  const auditUserId = actor?.id;
+
+  // Server-side audit trail log - skip rather than misattribute to a fake
+  // tenant if the session somehow evaporated mid-request.
+  if (auditTenantId) {
   await logAuditEvent({
-    tenantId: "tnt_acme_corp",
+    tenantId: auditTenantId,
+    userId: auditUserId,
     action: "DELETE",
     entity: entityName,
     entityId: id,
   });
+  }
 
   return {
     success: true,
@@ -785,15 +1031,33 @@ export async function updateRolePermissionsAction(
   permissions: Record<string, string[]>,
 ): Promise<ActionResult> {
   try {
-    const tenantId = await getDefaultTenantId();
+    const denied = await denyIfUnauthorized("sys_roles", "update");
+    if (denied) return denied;
+
+    const user = await getSessionUser();
+    if (!user || !user.tenantId) {
+      return { success: false, error: "Unauthorized." };
+    }
+    const tenantId = user.tenantId;
+
+    const [role] = await db
+      .select({ id: schema.roles.id })
+      .from(schema.roles)
+      .where(and(eq(schema.roles.id, roleId), eq(schema.roles.tenantId, tenantId)));
+    if (!role) {
+      return { success: false, error: "Role tidak ditemukan." };
+    }
+
     let totalCount = 0;
     Object.values(permissions).forEach((actions) => {
       totalCount += actions.length;
     });
 
-    // 1. Drizzle ORM PostgreSQL update/insert for permissions table
-    try {
-      await db
+    // 1. Drizzle ORM PostgreSQL update/insert for permissions table - errors here
+    // must propagate to the outer catch, not be swallowed, otherwise the caller
+    // is told the save succeeded when it didn't.
+    await db.transaction(async (tx) => {
+      await tx
         .delete(schema.permissions)
         .where(eq(schema.permissions.roleId, roleId));
       const insertValues = Object.entries(permissions)
@@ -806,23 +1070,19 @@ export async function updateRolePermissionsAction(
         }));
 
       if (insertValues.length > 0) {
-        await db.insert(schema.permissions).values(insertValues);
+        await tx.insert(schema.permissions).values(insertValues);
       }
 
-      await db
+      await tx
         .update(schema.roles)
         .set({ updatedAt: new Date() })
         .where(eq(schema.roles.id, roleId));
-    } catch (dbErr: any) {
-      console.warn(
-        "[Drizzle ORM Update Role Permissions Warning]:",
-        dbErr?.message || dbErr,
-      );
-    }
+    });
 
     // 2. Server-side audit log
     await logAuditEvent({
-      tenantId: "tnt_acme_corp",
+      tenantId,
+      userId: user.id,
       action: "UPDATE",
       entity: "Role Permissions Matrix",
       entityId: roleId,
@@ -847,6 +1107,22 @@ export async function fetchRolePermissionsAction(
   roleId: string,
 ): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("sys_roles", "read");
+    if (denied) return denied;
+
+    const user = await getSessionUser();
+    if (!user || !user.tenantId) {
+      return { success: false, error: "Unauthorized." };
+    }
+
+    const [role] = await db
+      .select({ id: schema.roles.id })
+      .from(schema.roles)
+      .where(and(eq(schema.roles.id, roleId), eq(schema.roles.tenantId, user.tenantId)));
+    if (!role) {
+      return { success: false, error: "Role tidak ditemukan." };
+    }
+
     const table = schema.permissions;
     if (table) {
       const perms = await db
@@ -899,7 +1175,10 @@ export async function getUserSessionDataAction(): Promise<ActionResult> {
       userId: ctx.userId,
       userName: ctx.userName,
       companyName: ctx.companyName,
+      companyLogoUrl: ctx.companyLogoUrl,
+      branchId: ctx.branchId,
       branchName: ctx.branchName,
+      warehouseId: ctx.warehouseId,
       warehouseName: ctx.warehouseName,
       tenantCode: ctx.tenantCode,
       tenantName: ctx.tenantName,

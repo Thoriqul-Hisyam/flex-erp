@@ -20,6 +20,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   FileText,
+  FileSearch,
   ShoppingCart,
   PackageCheck,
   FileSpreadsheet,
@@ -194,6 +195,13 @@ const navItems: NavItem[] = [
     category: "PURCHASING",
   },
   {
+    icon: FileSearch,
+    href: "/purchasing/rfq",
+    label: "RFQ & Vendor Comparison",
+    pageKey: "pur_rfq",
+    category: "PURCHASING",
+  },
+  {
     icon: ShoppingCart,
     href: "/purchasing/orders",
     label: "Purchase Orders",
@@ -328,7 +336,7 @@ export function Sidebar() {
       </div>
 
       {/* Main Center Floating Navigation Card */}
-      <div className="bg-white dark:bg-[#12161f] px-2 py-3 rounded-[26px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-1.5 h-auto shrink-0 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-none my-1">
+      <div className="bg-white dark:bg-[#12161f] px-2 py-3 rounded-[26px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-[#e6e9f0] dark:border-slate-800 flex flex-col items-center gap-1.5 shrink min-h-0 w-full overflow-y-auto scrollbar-none my-1">
         {visibleItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;

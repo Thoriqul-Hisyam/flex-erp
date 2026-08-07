@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchStockMovementsAction,
   postAdjustmentAction,
@@ -172,35 +173,23 @@ export default function StockAdjustmentsPage() {
               <label className="text-[11px] font-semibold text-[#8a94a6]">
                 Product
               </label>
-              <select
+              <SearchableSelect
                 value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className="mt-1 w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="">-- Select product --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.sku})
-                  </option>
-                ))}
-              </select>
+                onChange={setProductId}
+                options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))}
+                placeholder="-- Select product --"
+              />
             </div>
             <div>
               <label className="text-[11px] font-semibold text-[#8a94a6]">
                 Warehouse
               </label>
-              <select
+              <SearchableSelect
                 value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="mt-1 w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="">-- Select warehouse --</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setWarehouseId}
+                options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                placeholder="-- Select warehouse --"
+              />
             </div>
             <div>
               <label className="text-[11px] font-semibold text-[#8a94a6]">

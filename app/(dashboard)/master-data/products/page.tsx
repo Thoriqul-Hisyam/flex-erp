@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Warehouse } from "lucide-react";
 import { MasterDataPage } from "@/components/crud/master-data-page";
 import { ProductData } from "@/lib/types/entities";
 import { Column } from "@/components/ui/data-table";
@@ -148,8 +149,8 @@ export default function ProductsPage() {
           >
             {formatNumber(item.stockOnHand)} {item.unit}
           </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-medium">
-            📍 {item.defaultWarehouse || "Gudang Utama Jakarta"}
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-sans font-medium flex items-center gap-1">
+            <Warehouse className="h-3 w-3" /> {item.defaultWarehouse || "Gudang Utama Jakarta"}
           </div>
         </div>
       ),

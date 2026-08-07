@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
-import { SiteSettingsProvider } from "@/components/providers/site-settings-provider";
 import { ModuleProvider } from "@/components/providers/module-provider";
 import { getSessionUser } from "@/lib/auth/session";
 import "./globals.css";
@@ -27,9 +26,7 @@ export default async function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[#f1f5f9] dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
         <ThemeProvider>
-          <SiteSettingsProvider>
-            <ModuleProvider key={providerKey}>{children}</ModuleProvider>
-          </SiteSettingsProvider>
+          <ModuleProvider key={providerKey}>{children}</ModuleProvider>
         </ThemeProvider>
       </body>
     </html>

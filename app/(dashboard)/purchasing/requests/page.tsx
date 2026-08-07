@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchPurchaseRequestsAction,
   createPurchaseRequestAction,
@@ -104,10 +105,6 @@ export default function PurchaseRequestsPage() {
     });
   }, []);
 
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Purchase Requests" roleName={permission.roleName} />;
-  }
-
   const handleAddItem = () => {
     setItems((prev) => [...prev, { productId: "", qtyRequested: 1, unitCost: 0, notes: "" }]);
   };
@@ -133,7 +130,12 @@ export default function PurchaseRequestsPage() {
   const handleOpenCreateModal = () => {
     setEditingPrId(null);
     setRequestType("FOR_RESALE");
-    setBranchId("");
+    // Default "Cabang Pemohon" to the requester's own branch. The server
+    // action rejects any branchId that doesn't match the session user's
+    // assigned branch (see assertCompanyScopedBranch in purchasing-actions.ts),
+    // so a branch-assigned user must submit their own branch. Users with no
+    // assigned branch (HQ/unassigned) keep free choice across company branches.
+    setBranchId(permission.branchId || "");
     setDepartment("");
     setNotes("");
     setItems([{ productId: "", qtyRequested: 1, unitCost: 0, notes: "" }]);
@@ -211,8 +213,10 @@ export default function PurchaseRequestsPage() {
     actionType: "SUBMIT" | "APPROVE" | "REJECT" | "CANCEL";
     isLoading: boolean;
   }>({ isOpen: false, prId: "", prNumber: "", actionType: "SUBMIT", isLoading: false });
+  const [actionReason, setActionReason] = React.useState("");
 
   const handleOpenActionModal = (id: string, num: string, type: "SUBMIT" | "APPROVE" | "REJECT" | "CANCEL") => {
+    setActionReason("");
     setConfirmModal({ isOpen: true, prId: id, prNumber: num, actionType: type, isLoading: false });
   };
 
@@ -224,9 +228,9 @@ export default function PurchaseRequestsPage() {
     } else if (confirmModal.actionType === "APPROVE") {
       res = await approvePurchaseRequestAction(confirmModal.prId);
     } else if (confirmModal.actionType === "REJECT") {
-      res = await rejectPurchaseRequestAction(confirmModal.prId);
+      res = await rejectPurchaseRequestAction(confirmModal.prId, actionReason);
     } else {
-      res = await cancelPurchaseRequestAction(confirmModal.prId);
+      res = await cancelPurchaseRequestAction(confirmModal.prId, actionReason);
     }
     setConfirmModal({ isOpen: false, prId: "", prNumber: "", actionType: "SUBMIT", isLoading: false });
     if (res.success) {
@@ -246,6 +250,10 @@ export default function PurchaseRequestsPage() {
     const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Purchase Requests" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -292,17 +300,18 @@ export default function PurchaseRequestsPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="SUBMITTED">Submitted</option>
-          <option value="APPROVED">Approved</option>
-          <option value="REJECTED">Rejected</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-48"
+          options={[
+            { value: "ALL", label: "Semua Status" },
+            { value: "DRAFT", label: "Draft" },
+            { value: "SUBMITTED", label: "Submitted" },
+            { value: "APPROVED", label: "Approved" },
+            { value: "REJECTED", label: "Rejected" },
+          ]}
+        />
       </div>
 
       {/* Table */}
@@ -503,37 +512,30 @@ export default function PurchaseRequestsPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Cabang Pemohon
                   </label>
-                  <select
+                  <SearchableSelect
                     value={branchId}
-                    onChange={(e) => setBranchId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Pilih Cabang (Opsional) --</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setBranchId}
+                    options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                    placeholder="-- Pilih Cabang (Opsional) --"
+                    disabled={!editingPrId && !!permission.branchId}
+                  />
+                  {!editingPrId && !!permission.branchId && (
+                    <p className="text-[10px] text-[#8a94a6]">
+                      Mengikuti cabang akun Anda saat ini.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Divisi / Department <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Departemen --</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.name}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setDepartment}
+                    options={departments.map((d) => ({ value: d.name, label: `${d.name} (${d.code})` }))}
+                    placeholder="-- Pilih Departemen --"
+                  />
                 </div>
               </div>
 
@@ -560,19 +562,13 @@ export default function PurchaseRequestsPage() {
                       key={idx}
                       className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-[#e6e9f0] dark:border-slate-800"
                     >
-                      <select
+                      <SearchableSelect
                         value={item.productId}
-                        onChange={(e) => handleItemChange(idx, "productId", e.target.value)}
-                        className="flex-1 h-8 rounded-lg border border-[#e6e9f0] dark:border-slate-800 px-2 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Pilih Produk --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.sku || "-"})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => handleItemChange(idx, "productId", val)}
+                        options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku || "-"})` }))}
+                        placeholder="-- Pilih Produk --"
+                        className="flex-1"
+                      />
 
                       <Input
                         type="number"
@@ -684,6 +680,10 @@ export default function PurchaseRequestsPage() {
             : "danger"
         }
         isLoading={confirmModal.isLoading}
+        requireReason={confirmModal.actionType === "REJECT" || confirmModal.actionType === "CANCEL"}
+        reasonLabel={confirmModal.actionType === "REJECT" ? "Alasan Penolakan" : "Alasan Pembatalan"}
+        reasonValue={actionReason}
+        onReasonChange={setActionReason}
       />
       {/* Document Print & Detail Modal */}
       {printDoc && (

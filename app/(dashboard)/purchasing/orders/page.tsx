@@ -24,12 +24,15 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchPurchaseOrdersAction,
   fetchPurchaseRequestsAction,
   createPurchaseOrderAction,
   issuePurchaseOrderAction,
   createGoodsReceiptAction,
+  cancelPurchaseOrderAction,
+  closePurchaseOrderShortAction,
 } from "@/app/actions/purchasing-actions";
 import { fetchRecordsAction } from "@/app/actions/crud-actions";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -89,6 +92,13 @@ export default function PurchaseOrdersPage() {
     load();
   }, [load]);
 
+  const loadApprovedPrs = React.useCallback(async () => {
+    const r = await fetchPurchaseRequestsAction();
+    if (r.success && Array.isArray(r.data)) {
+      setApprovedPrs(r.data.filter((pr: any) => pr.status === "APPROVED" && !pr.poId));
+    }
+  }, []);
+
   React.useEffect(() => {
     fetchRecordsAction("Supplier").then((r) => {
       if (r.success && Array.isArray(r.data)) setSuppliers(r.data);
@@ -102,16 +112,8 @@ export default function PurchaseOrdersPage() {
     fetchRecordsAction("Product").then((r) => {
       if (r.success && Array.isArray(r.data)) setProducts(r.data);
     });
-    fetchPurchaseRequestsAction().then((r) => {
-      if (r.success && Array.isArray(r.data)) {
-        setApprovedPrs(r.data.filter((pr: any) => pr.status === "APPROVED" && !pr.poId));
-      }
-    });
-  }, []);
-
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Purchase Orders" roleName={permission.roleName} />;
-  }
+    loadApprovedPrs();
+  }, [loadApprovedPrs]);
 
   const handleAddItem = () => {
     setItems((prev) => [...prev, { productId: "", qtyOrdered: 1, unitPrice: 0 }]);
@@ -197,6 +199,7 @@ export default function PurchaseOrdersPage() {
       setNotes("");
       setItems([{ productId: "", qtyOrdered: 1, unitPrice: 0 }]);
       load();
+      loadApprovedPrs();
     } else {
       showToast({ type: "error", title: "Gagal", message: res.message });
     }
@@ -221,6 +224,61 @@ export default function PurchaseOrdersPage() {
     if (res.success) {
       showToast({ type: "success", title: "Issued", message: res.message });
       load();
+      loadApprovedPrs();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Cancel PO State
+  const [cancelModal, setCancelModal] = React.useState<{
+    isOpen: boolean;
+    poId: string;
+    poNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, poId: "", poNumber: "", isLoading: false });
+  const [cancelReason, setCancelReason] = React.useState("");
+
+  const handleOpenCancelModal = (id: string, num: string) => {
+    setCancelReason("");
+    setCancelModal({ isOpen: true, poId: id, poNumber: num, isLoading: false });
+  };
+
+  const handleCancelPo = async () => {
+    setCancelModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await cancelPurchaseOrderAction(cancelModal.poId, cancelReason);
+    setCancelModal({ isOpen: false, poId: "", poNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "Berhasil Dibatalkan", message: res.message });
+      load();
+      loadApprovedPrs();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Close Short State
+  const [shortCloseModal, setShortCloseModal] = React.useState<{
+    isOpen: boolean;
+    poId: string;
+    poNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, poId: "", poNumber: "", isLoading: false });
+  const [shortCloseReason, setShortCloseReason] = React.useState("");
+
+  const handleOpenShortCloseModal = (id: string, num: string) => {
+    setShortCloseReason("");
+    setShortCloseModal({ isOpen: true, poId: id, poNumber: num, isLoading: false });
+  };
+
+  const handleCloseShort = async () => {
+    setShortCloseModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await closePurchaseOrderShortAction(shortCloseModal.poId, shortCloseReason);
+    setShortCloseModal({ isOpen: false, poId: "", poNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "PO Ditutup Short", message: res.message });
+      load();
+      loadApprovedPrs();
     } else {
       showToast({ type: "error", title: "Gagal", message: res.message });
     }
@@ -236,6 +294,10 @@ export default function PurchaseOrdersPage() {
     const matchesStatus = statusFilter === "ALL" || o.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Purchase Orders" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -282,17 +344,18 @@ export default function PurchaseOrdersPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="ISSUED">Issued (Terbit)</option>
-          <option value="PARTIALLY_RECEIVED">Partially Received</option>
-          <option value="RECEIVED">Fully Received</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-56"
+          options={[
+            { value: "ALL", label: "Semua Status" },
+            { value: "DRAFT", label: "Draft" },
+            { value: "ISSUED", label: "Issued (Terbit)" },
+            { value: "PARTIALLY_RECEIVED", label: "Partially Received" },
+            { value: "RECEIVED", label: "Fully Received" },
+          ]}
+        />
       </div>
 
       {/* Table */}
@@ -325,7 +388,12 @@ export default function PurchaseOrdersPage() {
                 </tr>
               ) : (
                 filtered.map((po) => {
-                  const meta = STATUS_META[po.status] || { label: po.status, variant: "secondary" };
+                  const isShortClosed =
+                    po.status === "RECEIVED" &&
+                    (po.items || []).some((i: any) => Number(i.qtyReceived) < Number(i.qtyOrdered));
+                  const meta = isShortClosed
+                    ? { label: "Received (Short)", variant: "warning" as const }
+                    : STATUS_META[po.status] || { label: po.status, variant: "secondary" as const };
                   return (
                     <tr
                       key={po.id}
@@ -404,6 +472,28 @@ export default function PurchaseOrdersPage() {
                             <Send className="h-3 w-3" /> Terbitkan PO
                           </Button>
                         )}
+                        {(po.status === "DRAFT" || po.status === "ISSUED") &&
+                          (permission.isSuperAdmin || permission.canDelete) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenCancelModal(po.id, po.poNumber)}
+                              className="rounded-full h-7 px-3 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                            >
+                              Batalkan
+                            </Button>
+                          )}
+                        {po.status === "PARTIALLY_RECEIVED" &&
+                          (permission.isSuperAdmin || permission.canApprove) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenShortCloseModal(po.id, po.poNumber)}
+                              className="rounded-full h-7 px-3 text-xs gap-1 border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-900/50 dark:hover:bg-amber-950/30"
+                            >
+                              Tutup Short
+                            </Button>
+                          )}
                       </td>
                     </tr>
                   );
@@ -434,22 +524,19 @@ export default function PurchaseOrdersPage() {
                 <label className="font-bold text-[#0088ff] flex items-center gap-1.5">
                   <Sparkles className="h-4 w-4" /> Impor dari Approved Purchase Request (PR)
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedPrId}
-                  onChange={(e) => handlePrSelect(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-blue-200 dark:border-blue-900 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                >
-                  <option value="">-- Buat PO Manual (Tanpa PR) --</option>
-                  {approvedPrs
+                  onChange={handlePrSelect}
+                  placeholder="-- Buat PO Manual (Tanpa PR) --"
+                  options={approvedPrs
                     .filter(
                       (pr) => !pr.poId && !orders.some((po) => po.prId === pr.id && po.status !== "CANCELLED")
                     )
-                    .map((pr) => (
-                      <option key={pr.id} value={pr.id}>
-                        {pr.prNumber} — {pr.department} ({pr.totalItems} item - {pr.requestType === "INTERNAL_USE" ? "Internal OPEX" : "Barang Dagang"})
-                      </option>
-                    ))}
-                </select>
+                    .map((pr) => ({
+                      value: pr.id,
+                      label: `${pr.prNumber} — ${pr.department} (${pr.totalItems} item - ${pr.requestType === "INTERNAL_USE" ? "Internal OPEX" : "Barang Dagang"})`,
+                    }))}
+                />
               </div>
 
               {/* Jenis Pengadaan */}
@@ -490,19 +577,12 @@ export default function PurchaseOrdersPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Supplier / Vendor <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={supplierId}
-                    onChange={(e) => setSupplierId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Supplier --</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code || "-"})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSupplierId}
+                    options={suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code || "-"})` }))}
+                    placeholder="-- Pilih Supplier --"
+                  />
                 </div>
 
                 {poType === "FOR_RESALE" ? (
@@ -510,38 +590,24 @@ export default function PurchaseOrdersPage() {
                     <label className="font-semibold text-slate-700 dark:text-slate-300">
                       Gudang Tujuan <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
                       value={warehouseId}
-                      onChange={(e) => setWarehouseId(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                      required
-                    >
-                      <option value="">-- Pilih Gudang --</option>
-                      {warehouses.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setWarehouseId}
+                      options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                      placeholder="-- Pilih Gudang --"
+                    />
                   </div>
                 ) : (
                   <div className="space-y-1">
                     <label className="font-semibold text-slate-700 dark:text-slate-300">
                       Cabang Tujuan <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
                       value={branchId}
-                      onChange={(e) => setBranchId(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                      required
-                    >
-                      <option value="">-- Pilih Cabang --</option>
-                      {branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setBranchId}
+                      options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                      placeholder="-- Pilih Cabang --"
+                    />
                   </div>
                 )}
               </div>
@@ -569,19 +635,13 @@ export default function PurchaseOrdersPage() {
                       key={idx}
                       className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-[#e6e9f0] dark:border-slate-800"
                     >
-                      <select
+                      <SearchableSelect
                         value={item.productId}
-                        onChange={(e) => handleItemChange(idx, "productId", e.target.value)}
-                        className="flex-1 h-8 rounded-lg border border-[#e6e9f0] dark:border-slate-800 px-2 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                        required
-                      >
-                        <option value="">-- Pilih Produk --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.sku || "-"})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => handleItemChange(idx, "productId", val)}
+                        options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku || "-"})` }))}
+                        placeholder="-- Pilih Produk --"
+                        className="flex-1"
+                      />
 
                       <Input
                         type="number"
@@ -655,6 +715,38 @@ export default function PurchaseOrdersPage() {
         variant="primary"
         isLoading={confirmModal.isLoading}
       />
+
+      {/* Cancel PO Modal */}
+      <ConfirmModal
+        isOpen={cancelModal.isOpen}
+        onClose={() => setCancelModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCancelPo}
+        title="Batalkan Purchase Order"
+        description={`Batalkan Purchase Order ${cancelModal.poNumber}? Stok ekspektasi (qtyIncoming) akan dilepas kembali.`}
+        confirmText="Ya, Batalkan PO"
+        variant="danger"
+        isLoading={cancelModal.isLoading}
+        requireReason
+        reasonLabel="Alasan Pembatalan"
+        reasonValue={cancelReason}
+        onReasonChange={setCancelReason}
+      />
+
+      {/* Close Short Modal */}
+      <ConfirmModal
+        isOpen={shortCloseModal.isOpen}
+        onClose={() => setShortCloseModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCloseShort}
+        title="Tutup PO Sebagai Short"
+        description={`Tutup sisa qty PO ${shortCloseModal.poNumber} yang belum diterima sebagai final (tidak akan datang lagi)? Stok ekspektasi sisa akan dilepas, dan faktur pembelian (jika ada) disesuaikan ke nilai yang benar-benar diterima.`}
+        confirmText="Ya, Tutup Short"
+        variant="warning"
+        isLoading={shortCloseModal.isLoading}
+        requireReason
+        reasonLabel="Alasan (misal: supplier stok habis, sisa dibatalkan)"
+        reasonValue={shortCloseReason}
+        onReasonChange={setShortCloseReason}
+      />
       {/* Document Print & Detail Modal */}
       {printDoc && (
         <DocumentPrintModal
@@ -666,9 +758,17 @@ export default function PurchaseOrdersPage() {
           partyName={printDoc.supplierName || "Supplier Utama"}
           warehouseName={printDoc.warehouseName}
           notes={printDoc.notes}
-          status={printDoc.status}
+          status={
+            printDoc.status === "RECEIVED" &&
+            (printDoc.items || []).some((i: any) => Number(i.qtyReceived) < Number(i.qtyOrdered))
+              ? "RECEIVED (SHORT - lihat catatan)"
+              : printDoc.status
+          }
           items={printDoc.items ? printDoc.items.map((i: any) => ({
-            productName: i.productName || "Produk",
+            productName:
+              Number(i.qtyReceived) < Number(i.qtyOrdered)
+                ? `${i.productName || "Produk"} (Diterima: ${formatNumber(Number(i.qtyReceived) || 0)}/${formatNumber(Number(i.qtyOrdered) || 0)})`
+                : i.productName || "Produk",
             productSku: i.productSku || "",
             qty: i.qtyOrdered || 1,
             unitPrice: i.unitPrice || 0,

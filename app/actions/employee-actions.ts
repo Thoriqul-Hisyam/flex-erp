@@ -3,8 +3,11 @@
 import { db, schema } from "@/db";
 import { eq, sql, desc } from "drizzle-orm";
 import { getSessionUser } from "@/lib/auth/session";
+import { denyIfUnauthorized } from "@/lib/auth/server-permissions";
+import { getScopeContext, withScope } from "@/lib/auth/scope";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { revalidatePath } from "next/cache";
+import { getErrorMessage } from "@/lib/utils";
 
 export interface ActionResult<T = unknown> {
   success: boolean;
@@ -14,12 +17,17 @@ export interface ActionResult<T = unknown> {
 
 export async function fetchEmployeesAction(): Promise<ActionResult<any[]>> {
   try {
+    const denied = await denyIfUnauthorized("md_employees", "read");
+    if (denied) return denied;
+
     const user = await getSessionUser();
-    if (!user || !user.tenantId || !user.companyId) {
+    if (!user || !user.tenantId) {
       return { success: false, message: "Unauthorized." };
     }
+    const scope = getScopeContext(user);
+    const empWhere = await withScope(schema.employees, scope);
 
-    const emps = await db
+    const empBaseQuery = db
       .select({
         id: schema.employees.id,
         employeeCode: schema.employees.employeeCode,
@@ -39,9 +47,10 @@ export async function fetchEmployeesAction(): Promise<ActionResult<any[]>> {
       .from(schema.employees)
       .leftJoin(schema.departments, eq(schema.employees.departmentId, schema.departments.id))
       .leftJoin(schema.branches, eq(schema.employees.branchId, schema.branches.id))
-      .leftJoin(schema.users, eq(schema.employees.userId, schema.users.id))
-      .where(eq(schema.employees.companyId, user.companyId))
-      .orderBy(desc(schema.employees.createdAt));
+      .leftJoin(schema.users, eq(schema.employees.userId, schema.users.id));
+    const emps = await (empWhere ? empBaseQuery.where(empWhere) : empBaseQuery).orderBy(
+      desc(schema.employees.createdAt),
+    );
 
     return {
       success: true,
@@ -53,9 +62,9 @@ export async function fetchEmployeesAction(): Promise<ActionResult<any[]>> {
         createdAt: e.createdAt ? new Date(e.createdAt).toISOString() : "",
       })),
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("fetchEmployeesAction Error:", error);
-    return { success: false, message: error.message || "Gagal mengambil data karyawan." };
+    return { success: false, message: getErrorMessage(error) || "Gagal mengambil data karyawan." };
   }
 }
 
@@ -70,6 +79,9 @@ export async function createEmployeeAction(params: {
   userId?: string;
 }): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("md_employees", "create");
+    if (denied) return denied;
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized." };
@@ -125,9 +137,9 @@ export async function createEmployeeAction(params: {
 
     revalidatePath("/master-data/employees");
     return { success: true, message: `Karyawan ${params.name} (${employeeCode}) berhasil ditambahkan.` };
-  } catch (error: any) {
+  } catch (error) {
     console.error("createEmployeeAction Error:", error);
-    return { success: false, message: error.message || "Gagal menambah karyawan." };
+    return { success: false, message: getErrorMessage(error) || "Gagal menambah karyawan." };
   }
 }
 
@@ -145,6 +157,9 @@ export async function updateEmployeeAction(
   }
 ): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("md_employees", "update");
+    if (denied) return denied;
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized." };
@@ -167,8 +182,8 @@ export async function updateEmployeeAction(
 
     revalidatePath("/master-data/employees");
     return { success: true, message: "Data Karyawan berhasil diperbarui." };
-  } catch (error: any) {
+  } catch (error) {
     console.error("updateEmployeeAction Error:", error);
-    return { success: false, message: error.message || "Gagal mengupdate karyawan." };
+    return { success: false, message: getErrorMessage(error) || "Gagal mengupdate karyawan." };
   }
 }

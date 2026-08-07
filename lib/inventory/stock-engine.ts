@@ -43,6 +43,35 @@ function num(value: unknown): number {
   return Number(value || 0);
 }
 
+export function getAvailableQtyForReservation(
+  qtyOnHand: number | string | null | undefined,
+  qtyReserved: number | string | null | undefined,
+): number {
+  return Math.max(num(qtyOnHand) - num(qtyReserved), 0);
+}
+
+export function assertSufficientStockForReservation(
+  qtyOnHand: number | string | null | undefined,
+  qtyReserved: number | string | null | undefined,
+  requestedQty: number | string | null | undefined,
+): void {
+  const available = getAvailableQtyForReservation(qtyOnHand, qtyReserved);
+  const requested = num(requestedQty);
+  if (requested > available) {
+    throw new Error(
+      `Stok tidak mencukupi untuk reservasi. Tersedia = ${available}, diminta = ${requested}.`,
+    );
+  }
+}
+
+async function runWithTx<T>(
+  tx: TxClient | undefined,
+  cb: (client: TxClient) => Promise<T>,
+): Promise<T> {
+  if (tx) return cb(tx);
+  return db.transaction(cb);
+}
+
 /**
  * Returns the current running balance row (or null) for a product+warehouse.
  */
@@ -66,7 +95,7 @@ async function getStockRow(
 /**
  * Creates the balance row if it doesn't exist yet, then returns it.
  */
-async function ensureStockRow(
+export async function ensureStockRow(
   tx: TxClient,
   ctx: MovementContext,
   warehouseId: string,
@@ -172,6 +201,8 @@ async function applyMovement(
     batchId?: string | null;
     allowNegative?: boolean;
     warehouseLabel: string;
+    fromWarehouseId?: string | null;
+    toWarehouseId?: string | null;
   },
 ): Promise<{
   movementId: string;
@@ -190,7 +221,7 @@ async function applyMovement(
   const beforeQty = num(row.qtyOnHand);
   const sign =
     opts.type.endsWith("_OUT") || opts.type === "ADJUSTMENT_SUBTRACT" ? -1 : 1;
-  let afterQty = beforeQty + sign * opts.qty;
+  const afterQty = beforeQty + sign * opts.qty;
 
   if (afterQty < 0 && !opts.allowNegative) {
     const [prod] = await tx
@@ -276,6 +307,8 @@ async function applyMovement(
       beforeQty: String(beforeQty),
       afterQty: String(afterQty),
       batchId: opts.batchId ?? null,
+      fromWarehouseId: opts.fromWarehouseId ?? null,
+      toWarehouseId: opts.toWarehouseId ?? null,
       refType: ctx.refType ?? null,
       refId: ctx.refId ?? null,
       note: ctx.note ?? null,
@@ -299,6 +332,7 @@ export async function adjustStock(
     unitCost?: number;
     reason?: string;
   },
+  tx?: TxClient,
 ): Promise<MovementResult> {
   if (params.qty <= 0) throw new Error("Qty harus > 0.");
   const type =
@@ -307,8 +341,8 @@ export async function adjustStock(
       : ("ADJUSTMENT_SUBTRACT" as const);
   const allowNegative = type === "ADJUSTMENT_ADD"; // adding never negative
 
-  return (await db.transaction(async (tx) => {
-    const result = await applyMovement(tx, ctx, {
+  return (await runWithTx(tx, async (txClient) => {
+    const result = await applyMovement(txClient, ctx, {
       type,
       productId: params.productId,
       warehouseId: params.warehouseId,
@@ -342,14 +376,15 @@ export async function receiveStock(
     unitCost?: number;
     batch?: { batchNo: string; expiryDate?: Date } | null;
   },
+  tx?: TxClient,
 ): Promise<MovementResult> {
   if (params.qty <= 0) throw new Error("Qty harus > 0.");
 
-  return (await db.transaction(async (tx) => {
+  return (await runWithTx(tx, async (txClient) => {
     let batchId: string | null = null;
     if (params.batch) {
       if (!params.batch.batchNo) throw new Error("Batch number wajib diisi.");
-      const [batch] = await tx
+      const [batch] = await txClient
         .insert(schema.batches)
         .values({
           tenantId: ctx.tenantId,
@@ -367,7 +402,7 @@ export async function receiveStock(
       batchId = batch.id;
     }
 
-    const result = await applyMovement(tx, ctx, {
+    const result = await applyMovement(txClient, ctx, {
       type: "STOCK_IN",
       productId: params.productId,
       warehouseId: params.warehouseId,
@@ -402,13 +437,14 @@ export async function issueStock(
     batchId?: string | null;
     batchNo?: string | null;
   },
+  tx?: TxClient,
 ): Promise<MovementResult> {
   if (params.qty <= 0) throw new Error("Qty harus > 0.");
 
-  return (await db.transaction(async (tx) => {
+  return (await runWithTx(tx, async (txClient) => {
     let resolvedBatchId = params.batchId || null;
     if (!resolvedBatchId && params.batchNo) {
-      const [foundBatch] = await tx
+      const [foundBatch] = await txClient
         .select({ id: schema.batches.id })
         .from(schema.batches)
         .where(
@@ -423,7 +459,7 @@ export async function issueStock(
       if (foundBatch) resolvedBatchId = foundBatch.id;
     }
 
-    const result = await applyMovement(tx, ctx, {
+    const result = await applyMovement(txClient, ctx, {
       type: "STOCK_OUT",
       productId: params.productId,
       warehouseId: params.warehouseId,
@@ -456,38 +492,31 @@ export async function transferStock(
     toWarehouseId: string;
     qty: number;
   },
+  tx?: TxClient,
 ): Promise<{ out: MovementResult; in: MovementResult }> {
   if (params.qty <= 0) throw new Error("Qty harus > 0.");
   if (params.fromWarehouseId === params.toWarehouseId)
     throw new Error("Gudang asal dan tujuan tidak boleh sama.");
 
-  return (await db.transaction(async (tx) => {
-    const out = await applyMovement(tx, ctx, {
+  return (await runWithTx(tx, async (txClient) => {
+    const out = await applyMovement(txClient, ctx, {
       type: "TRANSFER_OUT",
       productId: params.productId,
       warehouseId: params.fromWarehouseId,
       qty: params.qty,
       warehouseLabel: "gudang asal",
+      toWarehouseId: params.toWarehouseId,
     });
 
-    const inRes = await applyMovement(tx, ctx, {
+    const inRes = await applyMovement(txClient, ctx, {
       type: "TRANSFER_IN",
       productId: params.productId,
       warehouseId: params.toWarehouseId,
       qty: params.qty,
       unitCost: out.avgCost,
       warehouseLabel: "gudang tujuan",
+      fromWarehouseId: params.fromWarehouseId,
     });
-
-    // Record source/destination on the OUT ledger row for full audit trace.
-    await tx
-      .update(schema.stockMovements)
-      .set({ toWarehouseId: params.toWarehouseId })
-      .where(eq(schema.stockMovements.id, out.movementId));
-    await tx
-      .update(schema.stockMovements)
-      .set({ fromWarehouseId: params.fromWarehouseId })
-      .where(eq(schema.stockMovements.id, inRes.movementId));
 
     return {
       out: {

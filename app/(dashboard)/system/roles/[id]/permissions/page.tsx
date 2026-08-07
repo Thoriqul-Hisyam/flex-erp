@@ -113,6 +113,14 @@ const PAGE_MODULES: PageModuleConfig[] = [
     description:
       "Draft sales proposals, price estimations, and customer quotations.",
   },
+  {
+    key: "pur_rfq",
+    name: "RFQ & Vendor Comparison",
+    route: "/purchasing/rfq",
+    category: "Commercial & CRM",
+    description:
+      "Request and compare supplier quotations before awarding a purchase order.",
+  },
 
   // 3. Inventory & Operations Pages
   {
@@ -215,14 +223,6 @@ const PAGE_MODULES: PageModuleConfig[] = [
     description:
       "Inspect system audit logs, user activity timestamps, IP addresses, and payload diffs.",
   },
-  {
-    key: "sys_settings",
-    name: "Tenant & Portal Site Settings",
-    route: "/system/settings",
-    category: "System Security",
-    description:
-      "Configure system branding, site logos, dark/light themes, and regional settings.",
-  },
 ];
 
 const ACTIONS = [
@@ -309,7 +309,6 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
       sys_users: ["read"],
       sys_roles: ["read"],
       sys_audit: ["read", "export"],
-      sys_settings: ["read"],
     },
   },
   "role-3": {
@@ -341,7 +340,6 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
       sys_users: ["read"],
       sys_roles: ["read"],
       sys_audit: ["read"],
-      sys_settings: ["read"],
     },
   },
   "role-4": {
@@ -373,7 +371,6 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
       sys_users: ["read"],
       sys_roles: ["read"],
       sys_audit: ["read"],
-      sys_settings: ["read"],
     },
   },
   "role-5": {
@@ -405,7 +402,6 @@ const DEFAULT_ROLES_MAP: Record<string, RoleData> = {
       sys_users: ["read"],
       sys_roles: ["read"],
       sys_audit: ["read"],
-      sys_settings: ["read"],
     },
   },
 };

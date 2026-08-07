@@ -19,8 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DataTable, Column } from "@/components/ui/data-table";
-import { logAuditEvent } from "@/lib/audit/logger";
 import {
   createRecordAction,
   updateRecordAction,
@@ -48,12 +48,21 @@ interface MasterDataPageProps<T extends MasterDataItem> {
   createFields: {
     name: string;
     label: string;
-    type?: "text" | "number" | "email" | "select" | "textarea";
+    type?: "text" | "number" | "email" | "password" | "select" | "textarea";
     placeholder?: string;
     required?: boolean;
     disabled?: boolean;
     disabledOnEdit?: boolean;
-    options?: { label: string; value: string }[];
+    options?: { label: string; value: string; meta?: Record<string, string | null> }[];
+    /** For an optional select, the label of the synthetic "clear to empty" option (e.g. "-- Semua Perusahaan --"). */
+    clearLabel?: string;
+    /** Names of other fields whose value change should re-filter (and clear) this field's selection. */
+    dependsOn?: string[];
+    /** Escape hatch for non-equality cascading logic; defaults to matching each dependsOn key against option.meta. */
+    filterOptions?: (
+      options: { label: string; value: string; meta?: Record<string, string | null> }[],
+      formData: Record<string, any>,
+    ) => { label: string; value: string; meta?: Record<string, string | null> }[];
   }[];
 }
 
@@ -139,13 +148,6 @@ export function MasterDataPage<T extends MasterDataItem>({
       type: "success",
       title: "Exported",
       message: `${data.length} ${entityName} records exported to CSV.`,
-    });
-    logAuditEvent({
-      tenantId: permission.tenantCode || "LEFATECH-GLOBAL",
-      action: "CREATE",
-      entity: entityName,
-      entityId: "CSV_EXPORT",
-      newPayload: { exportCount: data.length },
     });
   };
 
@@ -300,14 +302,6 @@ export function MasterDataPage<T extends MasterDataItem>({
         message: `Successfully imported ${successCount} ${entityName} records (${errorCount} failed/skipped).`,
       });
 
-      logAuditEvent({
-        tenantId: permission.tenantCode || "LEFATECH-GLOBAL",
-        action: "CREATE",
-        entity: entityName,
-        entityId: "CSV_IMPORT",
-        newPayload: { successCount, errorCount },
-      });
-
       // Reload data
       startTransition(async () => {
         const result = await fetchRecordsAction(entityName);
@@ -330,7 +324,11 @@ export function MasterDataPage<T extends MasterDataItem>({
     setEditingItem(null);
     const initialForm: Record<string, any> = { status: "ACTIVE" };
     createFields.forEach((f) => {
-      if (f.type === "select" && f.options && f.options.length > 0) {
+      // A cascaded field (e.g. Branch depending on Company) must start empty
+      // - auto-picking its first raw option would ignore the parent entirely.
+      if (f.dependsOn && f.dependsOn.length > 0) {
+        initialForm[f.name] = "";
+      } else if (f.type === "select" && f.options && f.options.length > 0) {
         initialForm[f.name] = f.options[0].value;
       } else {
         initialForm[f.name] = "";
@@ -706,21 +704,53 @@ export function MasterDataPage<T extends MasterDataItem>({
               );
 
               if (field.type === "select") {
+                const parentKeys = field.dependsOn || [];
+                const parentsSatisfied = parentKeys.every((k) => !!formData[k]);
+                const matchedOptions = !parentsSatisfied
+                  ? []
+                  : field.filterOptions
+                    ? field.filterOptions(field.options || [], formData)
+                    : parentKeys.length > 0
+                      ? (field.options || []).filter((opt) =>
+                          parentKeys.every((k) => opt.meta?.[k] === formData[k]),
+                        )
+                      : field.options || [];
+                // An optional field must offer an explicit way back to "no
+                // restriction" - without this synthetic option, a select can
+                // only move forward through real values and never back to "".
+                const visibleOptions =
+                  !field.required && parentsSatisfied
+                    ? [{ value: "", label: field.clearLabel || "-- Tidak Dibatasi --" }, ...matchedOptions]
+                    : matchedOptions;
+                const missingParentLabel = parentKeys.length > 0 && !parentsSatisfied
+                  ? createFields.find((f) => f.name === parentKeys[0])?.label || parentKeys[0]
+                  : null;
+
                 return fieldWrapper(
-                  <select
-                    disabled={isDisabled}
+                  <SearchableSelect
+                    disabled={isDisabled || !!missingParentLabel}
                     value={formData[field.name] || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, [field.name]: e.target.value })
+                    onChange={(val) =>
+                      setFormData((prev) => {
+                        const next = { ...prev, [field.name]: val };
+                        // A stale child selection must never survive a parent
+                        // change (e.g. switching Company must clear a Branch
+                        // that belonged to the old Company).
+                        createFields.forEach((f) => {
+                          if (f.dependsOn?.includes(field.name)) {
+                            next[f.name] = "";
+                          }
+                        });
+                        return next;
+                      })
                     }
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {field.options?.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>,
+                    options={visibleOptions}
+                    placeholder={
+                      missingParentLabel
+                        ? `-- Pilih ${missingParentLabel} terlebih dahulu --`
+                        : field.placeholder || `-- Pilih ${field.label} --`
+                    }
+                  />,
                 );
               }
 
@@ -759,16 +789,15 @@ export function MasterDataPage<T extends MasterDataItem>({
               <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                 Record Status
               </label>
-              <select
+              <SearchableSelect
                 value={formData.status || "ACTIVE"}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value })
-                }
-                className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors"
-              >
-                <option value="ACTIVE">ACTIVE (Operasional)</option>
-                <option value="INACTIVE">INACTIVE (Non-Aktif)</option>
-              </select>
+                onChange={(val) => setFormData({ ...formData, status: val })}
+                options={[
+                  { value: "ACTIVE", label: "ACTIVE (Operasional)" },
+                  { value: "INACTIVE", label: "INACTIVE (Non-Aktif)" },
+                ]}
+                placeholder="-- Pilih Status --"
+              />
             </div>
           </div>
 
@@ -866,8 +895,8 @@ export function MasterDataPage<T extends MasterDataItem>({
             <div className="space-y-2">
               <div className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between">
                 <span>Pratinjau Data (5 Baris Pertama):</span>
-                <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400 font-mono">
-                  ✓ Header CSV Valid
+                <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Header CSV Valid
                 </span>
               </div>
               <div className="overflow-x-auto max-h-40 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px]">

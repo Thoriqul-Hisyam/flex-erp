@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Star } from "lucide-react";
 import { MasterDataPage } from "@/components/crud/master-data-page";
 import { SupplierData } from "@/lib/types/entities";
 import { Column } from "@/components/ui/data-table";
@@ -30,8 +31,8 @@ export default function SuppliersPage() {
       header: "Performance Score",
       align: "center",
       accessor: (item) => (
-        <Badge variant="outline" className="font-mono text-xs border-amber-500/40 text-amber-600 dark:text-amber-300">
-          ★ {item.rating} / 5.0
+        <Badge variant="outline" className="font-mono text-xs border-amber-500/40 text-amber-600 dark:text-amber-300 gap-1">
+          <Star className="h-3 w-3 fill-current" /> {item.rating} / 5.0
         </Badge>
       ),
     },

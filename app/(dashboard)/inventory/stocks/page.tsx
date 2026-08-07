@@ -12,15 +12,17 @@ import {
   Building2,
   Package,
   Warehouse,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fetchWarehouseStocksAction } from "@/app/actions/inventory-actions";
 import { fetchRecordsAction } from "@/app/actions/crud-actions";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { formatCurrency, formatNumber, exportToCsv } from "@/lib/utils";
 
 interface Stock {
   id: string;
@@ -114,13 +116,36 @@ export default function WarehouseStocksPage() {
           </h1>
           <p className="text-xs text-[#8a94a6]">Real-time stock-on-hand, reserved, incoming, and stock valuation per warehouse.</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => load(warehouseFilter)}
-          className="rounded-full gap-2 shrink-0"
-        >
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            onClick={() =>
+              exportToCsv("stock_balance", filtered, [
+                { key: "productName", header: "Product" },
+                { key: "productSku", header: "SKU" },
+                { key: "warehouseName", header: "Warehouse" },
+                { key: "qtyOnHand", header: "On Hand" },
+                { key: "qtyReserved", header: "Reserved" },
+                { key: "qtyAvailable", header: "Available" },
+                { key: "qtyIncoming", header: "Incoming" },
+                { key: "avgCost", header: "Avg Cost" },
+                { key: "stockValue", header: "Stock Value" },
+                { key: "reorderLevel", header: "Reorder Level" },
+                { key: "status", header: "Status" },
+              ])
+            }
+            className="rounded-full gap-2"
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => load(warehouseFilter)}
+            className="rounded-full gap-2"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -197,19 +222,18 @@ export default function WarehouseStocksPage() {
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select
+          <SearchableSelect
             value={warehouseFilter}
-            onChange={(e) => {
-              setWarehouseFilter(e.target.value);
-              load(e.target.value);
+            onChange={(val) => {
+              setWarehouseFilter(val);
+              load(val);
             }}
-            className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-          >
-            <option value="ALL">All Warehouses</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
+            className="w-48"
+            options={[
+              { value: "ALL", label: "All Warehouses" },
+              ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+            ]}
+          />
         </div>
       </div>
 

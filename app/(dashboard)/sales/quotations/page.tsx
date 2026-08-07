@@ -24,6 +24,7 @@ import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { useToast } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchSalesQuotationsAction,
   createSalesQuotationAction,
@@ -89,10 +90,6 @@ export default function SalesQuotationsPage() {
       if (r.success && Array.isArray(r.data)) setProducts(r.data);
     });
   }, []);
-
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Sales Quotations" roleName={permission.roleName} />;
-  }
 
   const handleAddItem = () => {
     setItems((prev) => [...prev, { productId: "", qtyRequested: 1, unitPrice: 0, discount: 0 }]);
@@ -186,6 +183,10 @@ export default function SalesQuotationsPage() {
     return matchesSearch && matchesStatus;
   });
 
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Sales Quotations" roleName={permission.roleName} />;
+  }
+
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
       {/* Header */}
@@ -210,7 +211,10 @@ export default function SalesQuotationsPage() {
           </Button>
           {(permission.isSuperAdmin || permission.canCreate) && (
             <Button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setBranchId(permission.branchId || "");
+                setIsModalOpen(true);
+              }}
               className="bg-[#0088ff] hover:bg-[#0077e6] text-white rounded-full gap-2 text-xs font-semibold shadow-md shadow-blue-500/20"
             >
               <Plus className="h-4 w-4" /> Buat Penawaran Baru
@@ -231,17 +235,18 @@ export default function SalesQuotationsPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="SENT">Sent (Terkirim)</option>
-          <option value="ACCEPTED">Accepted (Disetujui)</option>
-          <option value="REJECTED">Rejected</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-48"
+          options={[
+            { value: "ALL", label: "Semua Status" },
+            { value: "DRAFT", label: "Draft" },
+            { value: "SENT", label: "Sent (Terkirim)" },
+            { value: "ACCEPTED", label: "Accepted (Disetujui)" },
+            { value: "REJECTED", label: "Rejected" },
+          ]}
+        />
       </div>
 
       {/* Table */}
@@ -358,37 +363,28 @@ export default function SalesQuotationsPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Pelanggan / Customer <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Customer --</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code || "-"})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setCustomerId}
+                    options={customers.map((c) => ({ value: c.id, label: `${c.name} (${c.code || "-"})` }))}
+                    placeholder="-- Pilih Customer --"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Cabang Penanggung Jawab
                   </label>
-                  <select
+                  <SearchableSelect
                     value={branchId}
-                    onChange={(e) => setBranchId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Pilih Cabang --</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setBranchId}
+                    options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                    placeholder="-- Pilih Cabang --"
+                    disabled={!!permission.branchId}
+                  />
+                  {permission.branchId && (
+                    <p className="text-[10px] text-[#8a94a6]">Mengikuti cabang akun Anda saat ini.</p>
+                  )}
                 </div>
               </div>
 
@@ -416,19 +412,12 @@ export default function SalesQuotationsPage() {
                       className="grid grid-cols-12 gap-2 items-center bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-200/60 dark:border-slate-800"
                     >
                       <div className="col-span-5">
-                        <select
+                        <SearchableSelect
                           value={item.productId}
-                          onChange={(e) => handleItemChange(index, "productId", e.target.value)}
-                          className="w-full h-8 rounded-lg border border-[#e6e9f0] dark:border-slate-800 px-2 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                          required
-                        >
-                          <option value="">-- Pilih Produk --</option>
-                          {products.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} ({p.sku || "-"})
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(val) => handleItemChange(index, "productId", val)}
+                          options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku || "-"})` }))}
+                          placeholder="-- Pilih Produk --"
+                        />
                       </div>
 
                       <div className="col-span-2">

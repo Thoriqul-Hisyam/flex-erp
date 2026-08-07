@@ -10,12 +10,17 @@ import {
   revokeSession,
   SESSION_COOKIE_NAME,
 } from "@/lib/auth/session";
+import { logAuditEvent } from "@/lib/audit/logger";
+import { getErrorMessage } from "@/lib/utils";
 
 export interface LoginActionResult {
   success: boolean;
   message?: string;
   field?: string;
 }
+
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
 /**
  * Authenticates a user against the PostgreSQL users table via Drizzle ORM
@@ -53,7 +58,27 @@ export async function loginAction(
         field: "email",
       };
     }
-    // 2. Verify password against the stored bcrypt hash only.
+
+    // 2. Reject outright if the account is currently locked out.
+    if (userRecord.lockedUntil && userRecord.lockedUntil > new Date()) {
+      const minutesLeft = Math.ceil(
+        (userRecord.lockedUntil.getTime() - Date.now()) / 60000,
+      );
+      await logAuditEvent({
+        tenantId: userRecord.tenantId,
+        userId: userRecord.id,
+        action: "LOGIN_FAILED",
+        entity: "User",
+        entityId: userRecord.id,
+        newPayload: { reason: "account_locked" },
+      });
+      return {
+        success: false,
+        message: `Akun terkunci sementara akibat terlalu banyak percobaan gagal. Coba lagi dalam ${minutesLeft} menit.`,
+      };
+    }
+
+    // 3. Verify password against the stored bcrypt hash only.
     //    No hardcoded default password bypass.
     const isPasswordValid = userRecord.passwordHash
       ? await bcrypt
@@ -62,13 +87,41 @@ export async function loginAction(
       : false;
 
     if (!isPasswordValid) {
+      const nextAttempts = userRecord.failedLoginAttempts + 1;
+      const shouldLock = nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS;
+
+      await db
+        .update(schema.users)
+        .set(
+          shouldLock
+            ? { failedLoginAttempts: 0, lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) }
+            : { failedLoginAttempts: nextAttempts },
+        )
+        .where(eq(schema.users.id, userRecord.id))
+        .catch(() => {});
+
+      await logAuditEvent({
+        tenantId: userRecord.tenantId,
+        userId: userRecord.id,
+        action: "LOGIN_FAILED",
+        entity: "User",
+        entityId: userRecord.id,
+        newPayload: { reason: "wrong_password", attempts: nextAttempts },
+      });
+
+      if (shouldLock) {
+        return {
+          success: false,
+          message: `Terlalu banyak percobaan gagal. Akun terkunci selama 15 menit.`,
+        };
+      }
       return {
         success: false,
         message: "Email atau password salah.",
         field: "password",
       };
     }
-    // 3. Check account status
+    // 4. Check account status
     if (userRecord.status !== "ACTIVE") {
       return {
         success: false,
@@ -76,14 +129,22 @@ export async function loginAction(
       };
     }
 
-    // 4. Update last login timestamp
+    // 5. Reset lockout state + update last login timestamp
     await db
       .update(schema.users)
-      .set({ lastLoginAt: new Date() })
+      .set({ lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null })
       .where(eq(schema.users.id, userRecord.id))
       .catch(() => {});
 
-    // 5. Create a server-side session (random token -> user) and store the
+    await logAuditEvent({
+      tenantId: userRecord.tenantId,
+      userId: userRecord.id,
+      action: "LOGIN",
+      entity: "User",
+      entityId: userRecord.id,
+    });
+
+    // 6. Create a server-side session (random token -> user) and store the
     //    token in a secure httpOnly cookie.
     const token = await createSession(userRecord.id);
     const cookieStore = await cookies();
@@ -94,8 +155,8 @@ export async function loginAction(
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
     });
-  } catch (err: any) {
-    console.error("[loginAction] Error:", err?.message || err);
+  } catch (err) {
+    console.error("[loginAction] Error:", getErrorMessage(err) || err);
     return {
       success: false,
       message: "Terjadi kesalahan server. Coba lagi nanti.",

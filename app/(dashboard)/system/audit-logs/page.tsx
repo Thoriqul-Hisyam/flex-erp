@@ -6,17 +6,63 @@ import { Badge } from "@/components/ui/badge";
 import { AuditLogData } from "@/lib/types/entities";
 import { fetchRecordsAction } from "@/app/actions/crud-actions";
 import { ShieldCheck } from "lucide-react";
+import { usePermission } from "@/lib/auth/use-permission";
+import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export default function SystemAuditLogsPage() {
+  const permission = usePermission("sys_audit");
   const [logs, setLogs] = React.useState<AuditLogData[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const [filterUser, setFilterUser] = React.useState("ALL");
+  const [filterEntity, setFilterEntity] = React.useState("ALL");
+  const [filterAction, setFilterAction] = React.useState("ALL");
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
 
   React.useEffect(() => {
+    setIsLoading(true);
     fetchRecordsAction("Audit Log").then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setLogs(res.data as AuditLogData[]);
       }
+      setIsLoading(false);
     });
   }, []);
+
+  const userOptions = React.useMemo(() => {
+    const unique = Array.from(new Set(logs.map((l) => l.user))).sort();
+    return [{ value: "ALL", label: "Semua Pengguna" }, ...unique.map((u) => ({ value: u, label: u }))];
+  }, [logs]);
+
+  const entityOptions = React.useMemo(() => {
+    const unique = Array.from(new Set(logs.map((l) => l.entity))).sort();
+    return [{ value: "ALL", label: "Semua Entitas" }, ...unique.map((e) => ({ value: e, label: e }))];
+  }, [logs]);
+
+  const actionOptions = [
+    { value: "ALL", label: "Semua Aksi" },
+    { value: "CREATE", label: "CREATE" },
+    { value: "UPDATE", label: "UPDATE" },
+    { value: "DELETE", label: "DELETE" },
+    { value: "APPROVE", label: "APPROVE" },
+    { value: "POST", label: "POST" },
+    { value: "CANCEL", label: "CANCEL" },
+    { value: "LOGIN", label: "LOGIN" },
+    { value: "LOGIN_FAILED", label: "LOGIN_FAILED" },
+  ];
+
+  const filtered = logs.filter((l) => {
+    if (filterUser !== "ALL" && l.user !== filterUser) return false;
+    if (filterEntity !== "ALL" && l.entity !== filterEntity) return false;
+    if (filterAction !== "ALL" && l.action !== filterAction) return false;
+    const created = (l as any).createdAt ? new Date((l as any).createdAt) : null;
+    if (dateFrom && created && created < new Date(dateFrom)) return false;
+    if (dateTo && created && created > new Date(dateTo + "T23:59:59")) return false;
+    return true;
+  });
 
   const columns: Column<AuditLogData>[] = [
     {
@@ -72,9 +118,22 @@ export default function SystemAuditLogsPage() {
       key: "ipAddress",
       header: "IP Address",
       align: "right",
-      accessor: (item) => <span className="font-mono text-xs text-[#8a94a6]">{item.ipAddress || "192.168.1.1"}</span>,
+      accessor: (item) => <span className="font-mono text-xs text-[#8a94a6]">{item.ipAddress || "-"}</span>,
     },
   ];
+
+  if (permission.isLoading || isLoading) {
+    return (
+      <div className="space-y-4 animate-pulse">
+        <div className="h-16 bg-slate-200 dark:bg-slate-800 rounded-2xl" />
+        <div className="h-72 bg-slate-200 dark:bg-slate-800 rounded-3xl" />
+      </div>
+    );
+  }
+
+  if (!permission.isSuperAdmin && !permission.canRead) {
+    return <UnauthorizedCard pageName="System Audit Logs" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -96,9 +155,33 @@ export default function SystemAuditLogsPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-white dark:bg-[#12161f] p-4 rounded-2xl border border-[#e6e9f0] dark:border-slate-800 shadow-xs">
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase">Pengguna</label>
+          <SearchableSelect value={filterUser} onChange={setFilterUser} options={userOptions} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase">Entitas</label>
+          <SearchableSelect value={filterEntity} onChange={setFilterEntity} options={entityOptions} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase">Aksi</label>
+          <SearchableSelect value={filterAction} onChange={setFilterAction} options={actionOptions} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase">Dari Tanggal</label>
+          <DatePicker value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase">Sampai Tanggal</label>
+          <DatePicker value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
+        </div>
+      </div>
+
       {/* Audit Logs DataTable */}
       <DataTable
-        data={logs}
+        data={filtered}
         columns={columns}
         searchPlaceholder="Cari riwayat audit berdasarkan pengguna, tindakan, atau data..."
       />

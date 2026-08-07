@@ -11,15 +11,18 @@ import {
   AlertCircle,
   X,
 } from "lucide-react";
-import { useSiteSettings } from "@/components/providers/site-settings-provider";
 import { loginAction, LoginActionResult } from "@/app/actions/auth-actions";
 
+// The login screen has no session/company context yet, so it always shows
+// the app's own generic brand - per-company branding (name/logo) only
+// applies once a user is authenticated and their company is known.
+const BRAND_NAME = "Flex ERP";
+const BRAND_COLOR = "#0088ff";
+
 export default function FlexERPLoginPage() {
-  const { settings } = useSiteSettings();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
-  const [logoError, setLogoError] = React.useState(false);
 
   // Server action drives authentication (no client-side API fetch).
   const [state, formAction, isPending] = useActionState<
@@ -28,7 +31,7 @@ export default function FlexERPLoginPage() {
   >(loginAction, null);
 
   const errorMessage = state?.message || null;
-  const primaryColor = settings.primaryColor || "#0088ff";
+  const primaryColor = BRAND_COLOR;
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[#eceff4] dark:bg-[#090c10] p-4 sm:p-6 lg:p-8">
@@ -41,21 +44,12 @@ export default function FlexERPLoginPage() {
           {/* Brand Logo (Top Left) */}
           <div className="absolute top-6 left-6 z-20">
             <div className="flex items-center gap-2">
-              {settings.logoUrl && !logoError ? (
-                <img
-                  src={settings.logoUrl}
-                  alt={settings.siteName}
-                  onError={() => setLogoError(true)}
-                  className="h-6 w-auto object-contain"
-                />
-              ) : (
-                <span
-                  className="text-lg font-extrabold tracking-tight"
-                  style={{ color: primaryColor }}
-                >
-                  {settings.siteName || "Flex ERP"}.
-                </span>
-              )}
+              <span
+                className="text-lg font-extrabold tracking-tight"
+                style={{ color: primaryColor }}
+              >
+                {BRAND_NAME}.
+              </span>
             </div>
           </div>
 
@@ -78,7 +72,7 @@ export default function FlexERPLoginPage() {
           <div className="absolute right-0 bottom-0 h-full w-full overflow-hidden pointer-events-none select-none z-10 flex items-end justify-end">
             <img
               src="/images/assets/login-assets.avif"
-              alt={`${settings.siteName || "Flex ERP"} Mascot`}
+              alt={`${BRAND_NAME} Mascot`}
               className="h-[90%] w-auto object-contain object-right-bottom scale-[1.85] origin-bottom-right translate-x-[95%] translate-y-[2%]"
             />
           </div>
@@ -98,7 +92,7 @@ export default function FlexERPLoginPage() {
                 className="text-xl font-extrabold tracking-tight"
                 style={{ color: primaryColor }}
               >
-                {settings.siteName || "Flex ERP"}.
+                {BRAND_NAME}.
               </span>
             </div>
 
@@ -186,7 +180,7 @@ export default function FlexERPLoginPage() {
                   </div>
                 ) : (
                   <>
-                    Masuk ke {settings.siteName || "Flex ERP"}
+                    Masuk ke {BRAND_NAME}
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}

@@ -18,10 +18,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { DatePicker } from "@/components/ui/date-picker";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchGoodsReceiptsAction,
   fetchPurchaseOrdersAction,
   createGoodsReceiptAction,
+  cancelGoodsReceiptAction,
 } from "@/app/actions/purchasing-actions";
 import { formatNumber } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
@@ -68,22 +72,21 @@ export default function GoodsReceiptsPage() {
     load();
   }, [load]);
 
-  React.useEffect(() => {
-    fetchPurchaseOrdersAction().then((r) => {
-      if (r.success && Array.isArray(r.data)) {
-        // Only POs that are ISSUED or PARTIALLY_RECEIVED can receive goods
-        setIssuedOrders(
-          r.data.filter(
-            (po: any) => po.status === "ISSUED" || po.status === "PARTIALLY_RECEIVED"
-          )
-        );
-      }
-    });
+  const loadIssuedOrders = React.useCallback(async () => {
+    const r = await fetchPurchaseOrdersAction();
+    if (r.success && Array.isArray(r.data)) {
+      // Only POs that are ISSUED or PARTIALLY_RECEIVED can receive goods
+      setIssuedOrders(
+        r.data.filter(
+          (po: any) => po.status === "ISSUED" || po.status === "PARTIALLY_RECEIVED"
+        )
+      );
+    }
   }, []);
 
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Goods Receipts" roleName={permission.roleName} />;
-  }
+  React.useEffect(() => {
+    loadIssuedOrders();
+  }, [loadIssuedOrders]);
 
   const handlePoSelect = (poId: string) => {
     setSelectedPoId(poId);
@@ -142,6 +145,34 @@ export default function GoodsReceiptsPage() {
       setNotes("");
       setItems([]);
       load();
+      loadIssuedOrders();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Cancel GR State
+  const [cancelModal, setCancelModal] = React.useState<{
+    isOpen: boolean;
+    grId: string;
+    grNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, grId: "", grNumber: "", isLoading: false });
+  const [cancelReason, setCancelReason] = React.useState("");
+
+  const handleOpenCancelModal = (id: string, num: string) => {
+    setCancelReason("");
+    setCancelModal({ isOpen: true, grId: id, grNumber: num, isLoading: false });
+  };
+
+  const handleCancelGr = async () => {
+    setCancelModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await cancelGoodsReceiptAction(cancelModal.grId, cancelReason);
+    setCancelModal({ isOpen: false, grId: "", grNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "Berhasil Dibatalkan", message: res.message });
+      load();
+      loadIssuedOrders();
     } else {
       showToast({ type: "error", title: "Gagal", message: res.message });
     }
@@ -156,6 +187,10 @@ export default function GoodsReceiptsPage() {
       r.warehouseName.toLowerCase().includes(q)
     );
   });
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Goods Receipts" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -252,8 +287,11 @@ export default function GoodsReceiptsPage() {
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <Badge variant="success" className="rounded-full text-[10px]">
-                        RECEIVED
+                      <Badge
+                        variant={gr.status === "CANCELLED" ? "destructive" : "success"}
+                        className="rounded-full text-[10px]"
+                      >
+                        {gr.status}
                       </Badge>
                     </td>
                     <td className="p-4 text-center font-mono font-bold">
@@ -263,7 +301,7 @@ export default function GoodsReceiptsPage() {
                     <td className="p-4 text-[#8a94a6]">
                       {gr.receivedAt ? new Date(gr.receivedAt).toLocaleDateString("id-ID") : "-"}
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-4 text-center flex items-center justify-center gap-1.5">
                       <Button
                         size="sm"
                         variant="outline"
@@ -272,6 +310,16 @@ export default function GoodsReceiptsPage() {
                       >
                         <Printer className="h-3 w-3" /> Cetak Tanda Terima
                       </Button>
+                      {gr.status === "RECEIVED" && (permission.isSuperAdmin || permission.canDelete) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenCancelModal(gr.id, gr.grNumber)}
+                          className="rounded-full h-7 px-2.5 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                        >
+                          Batalkan
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -300,19 +348,15 @@ export default function GoodsReceiptsPage() {
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Pilih Purchase Order (PO) <span className="text-red-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedPoId}
-                  onChange={(e) => handlePoSelect(e.target.value)}
-                  className="w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  required
-                >
-                  <option value="">-- Pilih PO --</option>
-                  {issuedOrders.map((po) => (
-                    <option key={po.id} value={po.id}>
-                      {po.poNumber} — {po.supplierName} (Gudang: {po.warehouseName})
-                    </option>
-                  ))}
-                </select>
+                  onChange={handlePoSelect}
+                  placeholder="-- Pilih PO --"
+                  options={issuedOrders.map((po) => ({
+                    value: po.id,
+                    label: `${po.poNumber} — ${po.supplierName} (Gudang: ${po.warehouseName})`,
+                  }))}
+                />
               </div>
 
               {selectedPo && (
@@ -368,11 +412,9 @@ export default function GoodsReceiptsPage() {
 
                           <div className="col-span-3">
                             <label className="text-[10px] text-[#8a94a6]">Tgl Expired (Opsional)</label>
-                            <Input
-                              type="date"
+                            <DatePicker
                               value={item.expiryDate || ""}
-                              onChange={(e) => handleItemChange(idx, "expiryDate", e.target.value)}
-                              className="h-8 text-xs"
+                              onChange={(val) => handleItemChange(idx, "expiryDate", val)}
                             />
                           </div>
                         </div>
@@ -413,6 +455,21 @@ export default function GoodsReceiptsPage() {
           </div>
         </div>
       )}
+      {/* Cancel GR Modal */}
+      <ConfirmModal
+        isOpen={cancelModal.isOpen}
+        onClose={() => setCancelModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCancelGr}
+        title="Batalkan Goods Receipt"
+        description={`Batalkan Goods Receipt ${cancelModal.grNumber}? Stok yang sudah diterima akan dikoreksi (dikeluarkan kembali) dari gudang.`}
+        confirmText="Ya, Batalkan GR"
+        variant="danger"
+        isLoading={cancelModal.isLoading}
+        requireReason
+        reasonLabel="Alasan Pembatalan"
+        reasonValue={cancelReason}
+        onReasonChange={setCancelReason}
+      />
       {/* Document Print & Detail Modal */}
       {printDoc && (
         <DocumentPrintModal

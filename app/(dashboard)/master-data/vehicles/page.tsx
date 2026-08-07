@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { useToast } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchVehiclesAction,
   createVehicleAction,
@@ -307,17 +308,17 @@ export default function VehiclesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Jenis / Tipe Armada
                   </label>
-                  <select
+                  <SearchableSelect
                     value={vehicleType}
-                    onChange={(e) => setVehicleType(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="Truck Box">Truck Box Alumunium</option>
-                    <option value="Pickup Cargo">Pickup Cargo / Bak</option>
-                    <option value="Blind Van Express">Blind Van Express</option>
-                    <option value="Motorized Courier">Motor Pengantar</option>
-                    <option value="Operational Car">Mobil Operasional</option>
-                  </select>
+                    onChange={setVehicleType}
+                    options={[
+                      { value: "Truck Box", label: "Truck Box Alumunium" },
+                      { value: "Pickup Cargo", label: "Pickup Cargo / Bak" },
+                      { value: "Blind Van Express", label: "Blind Van Express" },
+                      { value: "Motorized Courier", label: "Motor Pengantar" },
+                      { value: "Operational Car", label: "Mobil Operasional" },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -338,18 +339,15 @@ export default function VehiclesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Cabang Penempatan
                   </label>
-                  <select
+                  <SearchableSelect
                     value={branchId}
-                    onChange={(e) => setBranchId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Semua Cabang --</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setBranchId}
+                    options={[
+                      { value: "", label: "-- Semua Cabang (Tidak Dibatasi) --" },
+                      ...branches.map((b) => ({ value: b.id, label: b.name })),
+                    ]}
+                    placeholder="-- Semua Cabang --"
+                  />
                 </div>
               </div>
 
@@ -370,15 +368,15 @@ export default function VehiclesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Status Armada
                   </label>
-                  <select
+                  <SearchableSelect
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="ACTIVE">ACTIVE (Siap Operasional)</option>
-                    <option value="MAINTENANCE">MAINTENANCE (Dalam Perbaikan/Servis)</option>
-                    <option value="INACTIVE">INACTIVE</option>
-                  </select>
+                    onChange={(val) => setStatus(val as any)}
+                    options={[
+                      { value: "ACTIVE", label: "ACTIVE (Siap Operasional)" },
+                      { value: "MAINTENANCE", label: "MAINTENANCE (Dalam Perbaikan/Servis)" },
+                      { value: "INACTIVE", label: "INACTIVE" },
+                    ]}
+                  />
                 </div>
               )}
 

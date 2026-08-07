@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "warehouse_id" uuid;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE set null ON UPDATE no action;

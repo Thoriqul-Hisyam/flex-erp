@@ -85,6 +85,12 @@ export default function CompaniesPage() {
             { label: "IDR - Indonesian Rupiah", value: "IDR" },
           ],
         },
+        {
+          name: "highValuePoThreshold",
+          label: "High Value PO Threshold (Rp)",
+          type: "number",
+          placeholder: "Kosongkan jika tidak perlu approval tambahan",
+        },
       ]}
     />
   );

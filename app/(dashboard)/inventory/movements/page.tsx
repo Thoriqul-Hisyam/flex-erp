@@ -8,14 +8,16 @@ import {
   RefreshCw,
   Search,
   ClipboardList,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fetchStockMovementsAction } from "@/app/actions/inventory-actions";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, exportToCsv } from "@/lib/utils";
 
 interface Movement {
   id: string;
@@ -94,9 +96,35 @@ export default function StockMovementsPage() {
           </h1>
           <p className="text-xs text-[#8a94a6]">Immutable audit trail of every stock in, stock out, transfer, and adjustment.</p>
         </div>
-        <Button variant="outline" onClick={load} className="rounded-full gap-2 shrink-0">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            onClick={() =>
+              exportToCsv("stock_movements", filtered, [
+                { key: "type", header: "Type" },
+                { key: "productName", header: "Product" },
+                { key: "productSku", header: "SKU" },
+                { key: "warehouseName", header: "Warehouse" },
+                { key: "fromWarehouseName", header: "From Warehouse" },
+                { key: "toWarehouseName", header: "To Warehouse" },
+                { key: "qty", header: "Qty" },
+                { key: "beforeQty", header: "Before Qty" },
+                { key: "afterQty", header: "After Qty" },
+                { key: "batchNo", header: "Batch" },
+                { key: "refType", header: "Reference Type" },
+                { key: "refId", header: "Reference ID" },
+                { key: "note", header: "Note" },
+                { key: "createdAt", header: "Timestamp" },
+              ])
+            }
+            className="rounded-full gap-2"
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </Button>
+          <Button variant="outline" onClick={load} className="rounded-full gap-2">
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -110,16 +138,15 @@ export default function StockMovementsPage() {
             className="pl-10 rounded-full h-9 text-xs"
           />
         </div>
-        <select
+        <SearchableSelect
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">All Types</option>
-          {Object.keys(TYPE_META).map((t) => (
-            <option key={t} value={t}>{TYPE_META[t].label}</option>
-          ))}
-        </select>
+          onChange={setTypeFilter}
+          className="w-48"
+          options={[
+            { value: "ALL", label: "All Types" },
+            ...Object.keys(TYPE_META).map((t) => ({ value: t, label: TYPE_META[t].label })),
+          ]}
+        />
       </div>
 
       {/* Table */}

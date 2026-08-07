@@ -23,12 +23,16 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import {
   fetchSalesOrdersAction,
   fetchSalesQuotationsAction,
   createSalesOrderAction,
   confirmSalesOrderAction,
+  cancelSalesOrderAction,
+  closeSalesOrderShortAction,
+  createSalesReturnAction,
 } from "@/app/actions/sales-actions";
 import { fetchRecordsAction } from "@/app/actions/crud-actions";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -85,6 +89,13 @@ export default function SalesOrdersPage() {
     load();
   }, [load]);
 
+  const loadAcceptedSqs = React.useCallback(async () => {
+    const r = await fetchSalesQuotationsAction();
+    if (r.success && Array.isArray(r.data)) {
+      setAcceptedSqs(r.data.filter((sq: any) => sq.status === "ACCEPTED"));
+    }
+  }, []);
+
   React.useEffect(() => {
     fetchRecordsAction("Customer").then((r) => {
       if (r.success && Array.isArray(r.data)) setCustomers(r.data);
@@ -98,16 +109,8 @@ export default function SalesOrdersPage() {
     fetchRecordsAction("Product").then((r) => {
       if (r.success && Array.isArray(r.data)) setProducts(r.data);
     });
-    fetchSalesQuotationsAction().then((r) => {
-      if (r.success && Array.isArray(r.data)) {
-        setAcceptedSqs(r.data.filter((sq: any) => sq.status === "ACCEPTED"));
-      }
-    });
-  }, []);
-
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Sales Orders" roleName={permission.roleName} />;
-  }
+    loadAcceptedSqs();
+  }, [loadAcceptedSqs]);
 
   const handleSqSelect = (sqId: string) => {
     setSelectedSqId(sqId);
@@ -180,6 +183,7 @@ export default function SalesOrdersPage() {
       setNotes("");
       setItems([{ productId: "", qtyOrdered: 1, unitPrice: 0, discount: 0 }]);
       load();
+      loadAcceptedSqs();
     } else {
       showToast({ type: "error", title: "Gagal", message: res.message });
     }
@@ -209,6 +213,118 @@ export default function SalesOrdersPage() {
     }
   };
 
+  // Cancel Order State
+  const [cancelModal, setCancelModal] = React.useState<{
+    isOpen: boolean;
+    soId: string;
+    soNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, soId: "", soNumber: "", isLoading: false });
+  const [cancelReason, setCancelReason] = React.useState("");
+
+  const handleOpenCancelModal = (id: string, num: string) => {
+    setCancelReason("");
+    setCancelModal({ isOpen: true, soId: id, soNumber: num, isLoading: false });
+  };
+
+  const handleCancelOrder = async () => {
+    setCancelModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await cancelSalesOrderAction(cancelModal.soId, cancelReason);
+    setCancelModal({ isOpen: false, soId: "", soNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "Berhasil Dibatalkan", message: res.message });
+      load();
+      loadAcceptedSqs();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Close Short State
+  const [shortCloseModal, setShortCloseModal] = React.useState<{
+    isOpen: boolean;
+    soId: string;
+    soNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, soId: "", soNumber: "", isLoading: false });
+  const [shortCloseReason, setShortCloseReason] = React.useState("");
+
+  const handleOpenShortCloseModal = (id: string, num: string) => {
+    setShortCloseReason("");
+    setShortCloseModal({ isOpen: true, soId: id, soNumber: num, isLoading: false });
+  };
+
+  const handleCloseShort = async () => {
+    setShortCloseModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await closeSalesOrderShortAction(shortCloseModal.soId, shortCloseReason);
+    setShortCloseModal({ isOpen: false, soId: "", soNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "SO Ditutup Short", message: res.message });
+      load();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Sales Return State
+  const [returnModal, setReturnModal] = React.useState<{
+    isOpen: boolean;
+    so: any | null;
+    isSaving: boolean;
+  }>({ isOpen: false, so: null, isSaving: false });
+  const [returnReason, setReturnReason] = React.useState("");
+  const [returnItems, setReturnItems] = React.useState<
+    Array<{ productId: string; productName: string; maxQty: number; qtyReturned: number }>
+  >([]);
+
+  const handleOpenReturnModal = (so: any) => {
+    setReturnReason("");
+    setReturnItems(
+      (so.items || [])
+        .filter((i: any) => Number(i.qtyDelivered) > 0)
+        .map((i: any) => ({
+          productId: i.productId,
+          productName: i.productName,
+          maxQty: Number(i.qtyDelivered),
+          qtyReturned: 0,
+        }))
+    );
+    setReturnModal({ isOpen: true, so, isSaving: false });
+  };
+
+  const handleReturnItemChange = (index: number, qty: number) => {
+    setReturnItems((prev) => prev.map((it, i) => (i === index ? { ...it, qtyReturned: qty } : it)));
+  };
+
+  const handleSubmitReturn = async () => {
+    if (!returnModal.so) return;
+    if (!returnReason.trim()) {
+      showToast({ type: "error", title: "Data Belum Lengkap", message: "Alasan retur wajib diisi." });
+      return;
+    }
+    const validItems = returnItems.filter((i) => i.qtyReturned > 0);
+    if (validItems.length === 0) {
+      showToast({ type: "error", title: "Data Belum Lengkap", message: "Isi qty retur > 0 pada minimal 1 produk." });
+      return;
+    }
+
+    setReturnModal((prev) => ({ ...prev, isSaving: true }));
+    const res = await createSalesReturnAction({
+      soId: returnModal.so.id,
+      reason: returnReason,
+      items: validItems.map((i) => ({ productId: i.productId, qtyReturned: i.qtyReturned })),
+    });
+    setReturnModal({ isOpen: false, so: null, isSaving: false });
+
+    if (res.success) {
+      showToast({ type: "success", title: "Retur Berhasil", message: res.message });
+      load();
+      loadAcceptedSqs();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
   const availableAcceptedSqs = acceptedSqs.filter(
     (sq) => !sq.soId && !orders.some((so) => so.sqId === sq.id && so.status !== "CANCELLED")
   );
@@ -223,6 +339,10 @@ export default function SalesOrdersPage() {
     const matchesStatus = statusFilter === "ALL" || o.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Sales Orders" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -269,17 +389,18 @@ export default function SalesOrdersPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="CONFIRMED">Confirmed (Stok Dialokasikan)</option>
-          <option value="PARTIALLY_DELIVERED">Partially Delivered</option>
-          <option value="DELIVERED">Fully Delivered</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-56"
+          options={[
+            { value: "ALL", label: "Semua Status" },
+            { value: "DRAFT", label: "Draft" },
+            { value: "CONFIRMED", label: "Confirmed (Stok Dialokasikan)" },
+            { value: "PARTIALLY_DELIVERED", label: "Partially Delivered" },
+            { value: "DELIVERED", label: "Fully Delivered" },
+          ]}
+        />
       </div>
 
       {/* Table */}
@@ -312,7 +433,12 @@ export default function SalesOrdersPage() {
                 </tr>
               ) : (
                 filtered.map((so) => {
-                  const meta = STATUS_META[so.status] || { label: so.status, variant: "secondary" };
+                  const isShortClosed =
+                    so.status === "DELIVERED" &&
+                    (so.items || []).some((i: any) => Number(i.qtyDelivered) < Number(i.qtyOrdered));
+                  const meta = isShortClosed
+                    ? { label: "Delivered (Short)", variant: "warning" as const }
+                    : STATUS_META[so.status] || { label: so.status, variant: "secondary" as const };
                   return (
                     <tr
                       key={so.id}
@@ -366,6 +492,39 @@ export default function SalesOrdersPage() {
                             <Send className="h-3 w-3" /> Konfirmasi SO
                           </Button>
                         )}
+                        {(so.status === "DRAFT" || so.status === "CONFIRMED") &&
+                          (permission.isSuperAdmin || permission.canDelete) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenCancelModal(so.id, so.soNumber)}
+                              className="rounded-full h-7 px-3 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                            >
+                              Batalkan
+                            </Button>
+                          )}
+                        {(so.status === "PARTIALLY_DELIVERED" || so.status === "DELIVERED") &&
+                          (permission.isSuperAdmin || permission.canCreate) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenReturnModal(so)}
+                              className="rounded-full h-7 px-3 text-xs gap-1 border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-900/50 dark:hover:bg-amber-950/30"
+                            >
+                              Retur
+                            </Button>
+                          )}
+                        {so.status === "PARTIALLY_DELIVERED" &&
+                          (permission.isSuperAdmin || permission.canApprove) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenShortCloseModal(so.id, so.soNumber)}
+                              className="rounded-full h-7 px-3 text-xs gap-1 border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-900/50 dark:hover:bg-amber-950/30"
+                            >
+                              Tutup Short
+                            </Button>
+                          )}
                       </td>
                     </tr>
                   );
@@ -396,18 +555,15 @@ export default function SalesOrdersPage() {
                 <label className="font-bold text-[#0088ff] flex items-center gap-1.5">
                   <Sparkles className="h-4 w-4" /> Impor dari Accepted Sales Quotation (SQ)
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedSqId}
-                  onChange={(e) => handleSqSelect(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-blue-200 dark:border-blue-900 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                >
-                  <option value="">-- Buat SO Manual (Tanpa SQ) --</option>
-                  {availableAcceptedSqs.map((sq) => (
-                    <option key={sq.id} value={sq.id}>
-                      {sq.sqNumber} — {sq.customerName} ({sq.totalItems} item)
-                    </option>
-                  ))}
-                </select>
+                  onChange={handleSqSelect}
+                  options={availableAcceptedSqs.map((sq) => ({
+                    value: sq.id,
+                    label: `${sq.sqNumber} — ${sq.customerName} (${sq.totalItems} item)`,
+                  }))}
+                  placeholder="-- Buat SO Manual (Tanpa SQ) --"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -415,38 +571,24 @@ export default function SalesOrdersPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Pelanggan / Customer <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Customer --</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code || "-"})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setCustomerId}
+                    options={customers.map((c) => ({ value: c.id, label: `${c.name} (${c.code || "-"})` }))}
+                    placeholder="-- Pilih Customer --"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Gudang Pengiriman <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={warehouseId}
-                    onChange={(e) => setWarehouseId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Gudang --</option>
-                    {warehouses.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setWarehouseId}
+                    options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                    placeholder="-- Pilih Gudang --"
+                  />
                 </div>
               </div>
 
@@ -496,6 +638,114 @@ export default function SalesOrdersPage() {
         isLoading={confirmModal.isLoading}
       />
 
+      {/* Cancel Order Modal */}
+      <ConfirmModal
+        isOpen={cancelModal.isOpen}
+        onClose={() => setCancelModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCancelOrder}
+        title="Batalkan Sales Order"
+        description={`Batalkan Sales Order ${cancelModal.soNumber}? Reservasi stok yang belum terkirim akan dilepas kembali.`}
+        confirmText="Ya, Batalkan SO"
+        variant="danger"
+        isLoading={cancelModal.isLoading}
+        requireReason
+        reasonLabel="Alasan Pembatalan"
+        reasonValue={cancelReason}
+        onReasonChange={setCancelReason}
+      />
+
+      {/* Close Short Modal */}
+      <ConfirmModal
+        isOpen={shortCloseModal.isOpen}
+        onClose={() => setShortCloseModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCloseShort}
+        title="Tutup SO Sebagai Short"
+        description={`Tutup sisa qty SO ${shortCloseModal.soNumber} yang belum dikirim sebagai final (tidak akan dikirim lagi)? Reservasi stok sisa akan dilepas, dan faktur penjualan (jika ada) disesuaikan ke nilai yang benar-benar dikirim.`}
+        confirmText="Ya, Tutup Short"
+        variant="warning"
+        isLoading={shortCloseModal.isLoading}
+        requireReason
+        reasonLabel="Alasan (misal: stok habis, sisa dibatalkan pelanggan)"
+        reasonValue={shortCloseReason}
+        onReasonChange={setShortCloseReason}
+      />
+
+      {/* Sales Return Modal */}
+      {returnModal.isOpen && returnModal.so && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#12161f] border border-[#e6e9f0] dark:border-slate-800 rounded-[28px] max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-[#0f172a] dark:text-white">
+                Retur Penjualan - SO {returnModal.so.soNumber}
+              </h3>
+              <p className="text-xs text-[#8a94a6]">
+                Isi qty barang yang dikembalikan pelanggan. Stok akan otomatis dikembalikan ke gudang.
+              </p>
+            </div>
+
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {returnItems.length === 0 ? (
+                <p className="text-xs text-[#8a94a6] text-center py-4">
+                  Tidak ada item yang sudah dikirim untuk SO ini.
+                </p>
+              ) : (
+                returnItems.map((item, idx) => (
+                  <div
+                    key={item.productId}
+                    className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-[#e6e9f0] dark:border-slate-800 text-xs"
+                  >
+                    <div className="flex-1">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{item.productName}</div>
+                      <div className="text-[10px] text-[#8a94a6]">Terkirim: {item.maxQty}</div>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={item.maxQty}
+                      value={item.qtyReturned}
+                      onChange={(e) => handleReturnItemChange(idx, Number(e.target.value) || 0)}
+                      className="w-24 h-8 text-center rounded-lg text-xs"
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#0f172a] dark:text-white">
+                Alasan Retur <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                rows={2}
+                className="w-full rounded-xl border border-[#e6e9f0] dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0088ff]/40"
+                placeholder="Contoh: barang rusak, salah kirim, dst."
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f0f2f7] dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReturnModal({ isOpen: false, so: null, isSaving: false })}
+                className="rounded-full px-5 h-9"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSubmitReturn}
+                disabled={returnModal.isSaving}
+                className="bg-amber-600 hover:bg-amber-700 text-white rounded-full px-6 h-9 font-semibold shadow-md"
+              >
+                {returnModal.isSaving ? "Memproses..." : "Proses Retur"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Document Print & Detail Modal */}
       {printDoc && (
         <DocumentPrintModal
@@ -507,9 +757,17 @@ export default function SalesOrdersPage() {
           partyName={printDoc.customerName || "Pelanggan Umum"}
           warehouseName={printDoc.warehouseName}
           notes={printDoc.notes}
-          status={printDoc.status}
+          status={
+            printDoc.status === "DELIVERED" &&
+            (printDoc.items || []).some((i: any) => Number(i.qtyDelivered) < Number(i.qtyOrdered))
+              ? "DELIVERED (SHORT - lihat catatan)"
+              : printDoc.status
+          }
           items={printDoc.items ? printDoc.items.map((i: any) => ({
-            productName: i.productName || "Produk",
+            productName:
+              Number(i.qtyDelivered) < Number(i.qtyOrdered)
+                ? `${i.productName || "Produk"} (Dikirim: ${formatNumber(Number(i.qtyDelivered) || 0)}/${formatNumber(Number(i.qtyOrdered) || 0)})`
+                : i.productName || "Produk",
             productSku: i.productSku || "",
             qty: i.qtyOrdered || 1,
             unitPrice: i.unitPrice || 0,

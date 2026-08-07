@@ -1,8 +1,15 @@
 "use server";
 
 import { db, schema } from "@/db";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, desc, or, type SQL } from "drizzle-orm";
 import { getSessionUser } from "@/lib/auth/session";
+import { denyIfUnauthorized } from "@/lib/auth/server-permissions";
+import {
+  getScopeContext,
+  withScope,
+  assertCompanyScopedWarehouse,
+  type ScopeContext,
+} from "@/lib/auth/scope";
 import { logAuditEvent } from "@/lib/audit/logger";
 import {
   adjustStock,
@@ -12,6 +19,13 @@ import {
   type MovementContext,
 } from "@/lib/inventory/stock-engine";
 import type { ActionResult } from "./crud-actions";
+import { getErrorMessage } from "@/lib/utils";
+import {
+  postAdjustmentSchema,
+  postStockInSchema,
+  postStockOutSchema,
+  postTransferSchema,
+} from "@/lib/validation/inventory";
 
 export interface WarehouseStockRow {
   id: string;
@@ -72,21 +86,25 @@ export interface BatchRow {
   isExpired: boolean;
 }
 
-async function resolveCompanyContext() {
+async function resolveInventoryContext(): Promise<
+  (ScopeContext & { userId: string }) | null
+> {
   const user = await getSessionUser();
   if (!user) return null;
+  return { ...getScopeContext(user), userId: user.id };
+}
 
-  let companyId = user.companyId;
-  if (!companyId) {
-    const [comp] = await db
-      .select()
-      .from(schema.companies)
-      .where(eq(schema.companies.tenantId, user.tenantId))
-      .limit(1);
-    companyId = comp?.id ?? null;
-  }
-
-  return { tenantId: user.tenantId, companyId, userId: user.id };
+/**
+ * Fetches reference/lookup rows (for resolving names on an already-scoped
+ * result set) filtered by company only, never by branch/warehouse - a
+ * branch-scoped user must still be able to resolve the name of a
+ * company-wide warehouse that legitimately shows up in their stock/movement
+ * rows (see withScope's branch-tier OR-with-company-wide rule).
+ */
+async function fetchCompanyScoped(table: any, ctx: ScopeContext) {
+  return ctx.companyId
+    ? db.select().from(table).where(eq(table.companyId, ctx.companyId))
+    : db.select().from(table);
 }
 
 function toMovementCtx(ctx: {
@@ -109,32 +127,27 @@ export async function fetchWarehouseStocksAction(
   warehouseId?: string,
 ): Promise<ActionResult<WarehouseStockRow[]>> {
   try {
-    const ctx = await resolveCompanyContext();
-    if (!ctx || !ctx.companyId)
-      return { success: false, error: "Company context not found" };
+    const denied = await denyIfUnauthorized("inv_stocks", "read");
+    if (denied) return denied;
 
-    const whereClause = sql`${schema.warehouseStocks.companyId} = ${ctx.companyId} ${
-      warehouseId
-        ? sql`AND ${schema.warehouseStocks.warehouseId} = ${warehouseId}`
-        : sql``
-    }`;
+    const ctx = await resolveInventoryContext();
+    if (!ctx) return { success: false, error: "Unauthorized" };
 
-    const rows = await db
-      .select()
-      .from(schema.warehouseStocks)
-      .where(whereClause);
+    const whereClause = await withScope(
+      schema.warehouseStocks,
+      ctx,
+      warehouseId ? [eq(schema.warehouseStocks.warehouseId, warehouseId)] : undefined,
+    );
+
+    const rows = whereClause
+      ? await db.select().from(schema.warehouseStocks).where(whereClause)
+      : await db.select().from(schema.warehouseStocks);
 
     const [whList, prodList] = await Promise.all([
-      db
-        .select()
-        .from(schema.warehouses)
-        .where(eq(schema.warehouses.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.products)
-        .where(eq(schema.products.companyId, ctx.companyId)),
+      fetchCompanyScoped(schema.warehouses, ctx),
+      fetchCompanyScoped(schema.products, ctx),
     ]);
-    const whMap = new Map(whList.map((w) => [w.id, w]));
+    const whMap = new Map(whList.map((w: any) => [w.id, w]));
     const prodMap = new Map(prodList.map((p) => [p.id, p]));
 
     const data: WarehouseStockRow[] = rows.map((r) => {
@@ -166,9 +179,9 @@ export async function fetchWarehouseStocksAction(
     });
 
     return { success: true, data };
-  } catch (err: any) {
-    console.error("[fetchWarehouseStocksAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Failed to fetch stocks" };
+  } catch (err) {
+    console.error("[fetchWarehouseStocksAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Failed to fetch stocks" };
   }
 }
 
@@ -181,39 +194,39 @@ export async function fetchStockMovementsAction(opts?: {
   limit?: number;
 }): Promise<ActionResult<StockMovementRow[]>> {
   try {
-    const ctx = await resolveCompanyContext();
-    if (!ctx || !ctx.companyId)
-      return { success: false, error: "Company context not found" };
+    const denied = await denyIfUnauthorized("inv_movements", "read");
+    if (denied) return denied;
 
-    let condition = sql`${schema.stockMovements.companyId} = ${ctx.companyId}`;
-    if (opts?.productId)
-      condition = sql`${condition} AND ${schema.stockMovements.productId} = ${opts.productId}`;
-    if (opts?.warehouseId)
-      condition = sql`${condition} AND (${schema.stockMovements.warehouseId} = ${opts.warehouseId} OR ${schema.stockMovements.fromWarehouseId} = ${opts.warehouseId} OR ${schema.stockMovements.toWarehouseId} = ${opts.warehouseId})`;
+    const ctx = await resolveInventoryContext();
+    if (!ctx) return { success: false, error: "Unauthorized" };
 
-    const rows = await db
-      .select()
-      .from(schema.stockMovements)
-      .where(condition)
+    const extra: SQL[] = [];
+    if (opts?.productId) {
+      extra.push(eq(schema.stockMovements.productId, opts.productId));
+    }
+    if (opts?.warehouseId) {
+      extra.push(
+        or(
+          eq(schema.stockMovements.warehouseId, opts.warehouseId),
+          eq(schema.stockMovements.fromWarehouseId, opts.warehouseId),
+          eq(schema.stockMovements.toWarehouseId, opts.warehouseId),
+        ) as SQL,
+      );
+    }
+    const whereClause = await withScope(schema.stockMovements, ctx, extra);
+
+    const baseQuery = db.select().from(schema.stockMovements);
+    const rows = await (whereClause ? baseQuery.where(whereClause) : baseQuery)
       .orderBy(desc(schema.stockMovements.createdAt))
       .limit(opts?.limit ?? 200);
 
     const [prodList, whList, batchList] = await Promise.all([
-      db
-        .select()
-        .from(schema.products)
-        .where(eq(schema.products.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.warehouses)
-        .where(eq(schema.warehouses.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.batches)
-        .where(eq(schema.batches.companyId, ctx.companyId)),
+      fetchCompanyScoped(schema.products, ctx),
+      fetchCompanyScoped(schema.warehouses, ctx),
+      fetchCompanyScoped(schema.batches, ctx),
     ]);
-    const prodMap = new Map(prodList.map((p) => [p.id, p]));
-    const whMap = new Map(whList.map((w) => [w.id, w]));
+    const prodMap = new Map(prodList.map((p: any) => [p.id, p]));
+    const whMap = new Map(whList.map((w: any) => [w.id, w]));
     const batchMap = new Map(batchList.map((b) => [b.id, b]));
 
     const data: StockMovementRow[] = rows.map((r) => {
@@ -247,11 +260,11 @@ export async function fetchStockMovementsAction(opts?: {
     });
 
     return { success: true, data };
-  } catch (err: any) {
-    console.error("[fetchStockMovementsAction] Error:", err?.message || err);
+  } catch (err) {
+    console.error("[fetchStockMovementsAction] Error:", getErrorMessage(err) || err);
     return {
       success: false,
-      error: err?.message || "Failed to fetch movements",
+      error: getErrorMessage(err) || "Failed to fetch movements",
     };
   }
 }
@@ -268,13 +281,30 @@ export async function postAdjustmentAction(params: {
   reason?: string;
 }): Promise<ActionResult> {
   try {
-    const ctx = await resolveCompanyContext();
+    const denied = await denyIfUnauthorized("inv_adjustments", "create");
+    if (denied) return denied;
+
+    const parsed = postAdjustmentSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
+    const ctx = await resolveInventoryContext();
     if (!ctx || !ctx.companyId)
       return { success: false, error: "Company context not found" };
 
+    const resolvedWarehouseId = await assertCompanyScopedWarehouse(
+      ctx.companyId,
+      params.warehouseId,
+      ctx.branchId ?? null,
+    );
+    if (!resolvedWarehouseId) {
+      return { success: false, error: "Warehouse is required" };
+    }
+
     const result = await adjustStock(toMovementCtx(ctx), {
       productId: params.productId,
-      warehouseId: params.warehouseId,
+      warehouseId: resolvedWarehouseId,
       direction: params.direction,
       qty: params.qty,
       unitCost: params.unitCost,
@@ -291,9 +321,9 @@ export async function postAdjustmentAction(params: {
     });
 
     return { success: true, data: result, message: "Adjustment recorded." };
-  } catch (err: any) {
-    console.error("[postAdjustmentAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Adjustment failed" };
+  } catch (err) {
+    console.error("[postAdjustmentAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Adjustment failed" };
   }
 }
 
@@ -312,9 +342,26 @@ export async function postStockInAction(params: {
   note?: string;
 }): Promise<ActionResult> {
   try {
-    const ctx = await resolveCompanyContext();
+    const denied = await denyIfUnauthorized("inv_movements", "create");
+    if (denied) return denied;
+
+    const parsed = postStockInSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
+    const ctx = await resolveInventoryContext();
     if (!ctx || !ctx.companyId)
       return { success: false, error: "Company context not found" };
+
+    const resolvedWarehouseId = await assertCompanyScopedWarehouse(
+      ctx.companyId,
+      params.warehouseId,
+      ctx.branchId ?? null,
+    );
+    if (!resolvedWarehouseId) {
+      return { success: false, error: "Warehouse is required" };
+    }
 
     const result = await receiveStock(
       {
@@ -325,7 +372,7 @@ export async function postStockInAction(params: {
       },
       {
         productId: params.productId,
-        warehouseId: params.warehouseId,
+        warehouseId: resolvedWarehouseId,
         qty: params.qty,
         unitCost: params.unitCost,
         batch: params.batchNo
@@ -349,9 +396,9 @@ export async function postStockInAction(params: {
     });
 
     return { success: true, data: result, message: "Stock received." };
-  } catch (err: any) {
-    console.error("[postStockInAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Stock IN failed" };
+  } catch (err) {
+    console.error("[postStockInAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Stock IN failed" };
   }
 }
 
@@ -368,9 +415,26 @@ export async function postStockOutAction(params: {
   note?: string;
 }): Promise<ActionResult> {
   try {
-    const ctx = await resolveCompanyContext();
+    const denied = await denyIfUnauthorized("inv_movements", "create");
+    if (denied) return denied;
+
+    const parsed = postStockOutSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
+    const ctx = await resolveInventoryContext();
     if (!ctx || !ctx.companyId)
       return { success: false, error: "Company context not found" };
+
+    const resolvedWarehouseId = await assertCompanyScopedWarehouse(
+      ctx.companyId,
+      params.warehouseId,
+      ctx.branchId ?? null,
+    );
+    if (!resolvedWarehouseId) {
+      return { success: false, error: "Warehouse is required" };
+    }
 
     const result = await issueStock(
       {
@@ -381,7 +445,7 @@ export async function postStockOutAction(params: {
       },
       {
         productId: params.productId,
-        warehouseId: params.warehouseId,
+        warehouseId: resolvedWarehouseId,
         qty: params.qty,
         batchId: params.batchId,
       },
@@ -397,9 +461,9 @@ export async function postStockOutAction(params: {
     });
 
     return { success: true, data: result, message: "Stock issued." };
-  } catch (err: any) {
-    console.error("[postStockOutAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Stock OUT failed" };
+  } catch (err) {
+    console.error("[postStockOutAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Stock OUT failed" };
   }
 }
 
@@ -414,14 +478,36 @@ export async function postTransferAction(params: {
   note?: string;
 }): Promise<ActionResult> {
   try {
-    const ctx = await resolveCompanyContext();
+    const denied = await denyIfUnauthorized("inv_transfers", "create");
+    if (denied) return denied;
+
+    const parsed = postTransferSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
+    const ctx = await resolveInventoryContext();
     if (!ctx || !ctx.companyId)
       return { success: false, error: "Company context not found" };
 
+    const fromWarehouseId = await assertCompanyScopedWarehouse(
+      ctx.companyId,
+      params.fromWarehouseId,
+      ctx.branchId ?? null,
+    );
+    const toWarehouseId = await assertCompanyScopedWarehouse(
+      ctx.companyId,
+      params.toWarehouseId,
+      ctx.branchId ?? null,
+    );
+    if (!fromWarehouseId || !toWarehouseId) {
+      return { success: false, error: "Both source and destination warehouses are required" };
+    }
+
     const result = await transferStock(toMovementCtx(ctx), {
       productId: params.productId,
-      fromWarehouseId: params.fromWarehouseId,
-      toWarehouseId: params.toWarehouseId,
+      fromWarehouseId,
+      toWarehouseId,
       qty: params.qty,
     });
 
@@ -435,9 +521,9 @@ export async function postTransferAction(params: {
     });
 
     return { success: true, data: result, message: "Stock transferred." };
-  } catch (err: any) {
-    console.error("[postTransferAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Transfer failed" };
+  } catch (err) {
+    console.error("[postTransferAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Transfer failed" };
   }
 }
 
@@ -449,34 +535,28 @@ export async function fetchBatchesAction(
   warehouseId?: string,
 ): Promise<ActionResult<BatchRow[]>> {
   try {
-    const ctx = await resolveCompanyContext();
-    if (!ctx || !ctx.companyId)
-      return { success: false, error: "Company context not found" };
+    const denied = await denyIfUnauthorized("inv_batches", "read");
+    if (denied) return denied;
 
-    let condition = sql`${schema.batches.companyId} = ${ctx.companyId}`;
-    if (productId)
-      condition = sql`${condition} AND ${schema.batches.productId} = ${productId}`;
-    if (warehouseId)
-      condition = sql`${condition} AND ${schema.batches.warehouseId} = ${warehouseId}`;
+    const ctx = await resolveInventoryContext();
+    if (!ctx) return { success: false, error: "Unauthorized" };
 
-    const rows = await db
-      .select()
-      .from(schema.batches)
-      .where(condition)
-      .orderBy(desc(schema.batches.createdAt));
+    const extra: SQL[] = [];
+    if (productId) extra.push(eq(schema.batches.productId, productId));
+    if (warehouseId) extra.push(eq(schema.batches.warehouseId, warehouseId));
+    const whereClause = await withScope(schema.batches, ctx, extra);
+
+    const baseQuery = db.select().from(schema.batches);
+    const rows = await (whereClause ? baseQuery.where(whereClause) : baseQuery).orderBy(
+      desc(schema.batches.createdAt),
+    );
 
     const [whList, prodList] = await Promise.all([
-      db
-        .select()
-        .from(schema.warehouses)
-        .where(eq(schema.warehouses.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.products)
-        .where(eq(schema.products.companyId, ctx.companyId)),
+      fetchCompanyScoped(schema.warehouses, ctx),
+      fetchCompanyScoped(schema.products, ctx),
     ]);
-    const whMap = new Map(whList.map((w) => [w.id, w]));
-    const prodMap = new Map(prodList.map((p) => [p.id, p]));
+    const whMap = new Map(whList.map((w: any) => [w.id, w]));
+    const prodMap = new Map(prodList.map((p: any) => [p.id, p]));
     const now = new Date();
 
     const data: BatchRow[] = rows.map((r) => {
@@ -510,9 +590,9 @@ export async function fetchBatchesAction(
     });
 
     return { success: true, data };
-  } catch (err: any) {
-    console.error("[fetchBatchesAction] Error:", err?.message || err);
-    return { success: false, error: err?.message || "Failed to fetch batches" };
+  } catch (err) {
+    console.error("[fetchBatchesAction] Error:", getErrorMessage(err) || err);
+    return { success: false, error: getErrorMessage(err) || "Failed to fetch batches" };
   }
 }
 
@@ -521,27 +601,26 @@ export async function fetchBatchesAction(
  */
 export async function getInventoryOverviewAction(): Promise<ActionResult<any>> {
   try {
-    const ctx = await resolveCompanyContext();
-    if (!ctx || !ctx.companyId)
-      return { success: false, error: "Company context not found" };
+    const denied = await denyIfUnauthorized("inv_stocks", "read");
+    if (denied) return denied;
+
+    const ctx = await resolveInventoryContext();
+    if (!ctx) return { success: false, error: "Unauthorized" };
+
+    const [stocksWhere, batchesWhere] = await Promise.all([
+      withScope(schema.warehouseStocks, ctx),
+      withScope(schema.batches, ctx),
+    ]);
 
     const [stocks, products, whList, batches] = await Promise.all([
-      db
-        .select()
-        .from(schema.warehouseStocks)
-        .where(eq(schema.warehouseStocks.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.products)
-        .where(eq(schema.products.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.warehouses)
-        .where(eq(schema.warehouses.companyId, ctx.companyId)),
-      db
-        .select()
-        .from(schema.batches)
-        .where(eq(schema.batches.companyId, ctx.companyId)),
+      stocksWhere
+        ? db.select().from(schema.warehouseStocks).where(stocksWhere)
+        : db.select().from(schema.warehouseStocks),
+      fetchCompanyScoped(schema.products, ctx),
+      fetchCompanyScoped(schema.warehouses, ctx),
+      batchesWhere
+        ? db.select().from(schema.batches).where(batchesWhere)
+        : db.select().from(schema.batches),
     ]);
 
     const prodMap = new Map(products.map((p) => [p.id, p]));
@@ -619,11 +698,11 @@ export async function getInventoryOverviewAction(): Promise<ActionResult<any>> {
         lowStockItems,
       },
     };
-  } catch (err: any) {
-    console.error("[getInventoryOverviewAction] Error:", err?.message || err);
+  } catch (err) {
+    console.error("[getInventoryOverviewAction] Error:", getErrorMessage(err) || err);
     return {
       success: false,
-      error: err?.message || "Failed to fetch overview",
+      error: getErrorMessage(err) || "Failed to fetch overview",
     };
   }
 }

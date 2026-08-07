@@ -42,6 +42,8 @@ export const auditActionEnum = pgEnum("AuditAction", [
   "APPROVE",
   "POST",
   "CANCEL",
+  "LOGIN",
+  "LOGIN_FAILED",
 ]);
 export const stockMovementTypeEnum = pgEnum("StockMovementType", [
   "STOCK_IN",
@@ -84,6 +86,19 @@ export const grStatusEnum = pgEnum("GrStatus", [
   "RECEIVED",
   "CANCELLED",
 ]);
+export const rfqStatusEnum = pgEnum("RfqStatus", [
+  "DRAFT",
+  "SENT",
+  "QUOTED",
+  "AWARDED",
+  "CANCELLED",
+]);
+export const rfqQuoteStatusEnum = pgEnum("RfqQuoteStatus", [
+  "INVITED",
+  "SUBMITTED",
+  "AWARDED",
+  "REJECTED",
+]);
 export const purchasingInvoiceStatusEnum = pgEnum("PurchasingInvoiceStatus", [
   "UNPAID",
   "PARTIALLY_PAID",
@@ -125,6 +140,10 @@ export const vehicleStatusEnum = pgEnum("VehicleStatus", [
   "MAINTENANCE",
   "INACTIVE",
 ]);
+export const salesReturnStatusEnum = pgEnum("SalesReturnStatus", [
+  "COMPLETED",
+  "CANCELLED",
+]);
 
 // 1. Tenants Table
 export const tenants = pgTable("tenants", {
@@ -139,30 +158,6 @@ export const tenants = pgTable("tenants", {
 });
 
 // 2. Site Settings Table (Multi-Tenant Scoped)
-export const siteSettings = pgTable("site_settings", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id")
-    .references(() => tenants.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
-  siteName: varchar("site_name", { length: 255 }).default("Flex ERP").notNull(),
-  siteTitle: varchar("site_title", { length: 255 }).default(
-    "Flex ERP Enterprise Platform",
-  ),
-  logoUrl: varchar("logo_url", { length: 255 }),
-  faviconUrl: varchar("favicon_url", { length: 255 }),
-  primaryColor: varchar("primary_color", { length: 50 }).default("#3b82f6"),
-  accentColor: varchar("accent_color", { length: 50 }).default("#1d4ed8"),
-  themeMode: varchar("theme_mode", { length: 20 }).default("dark"),
-  timezone: varchar("timezone", { length: 100 }).default("Asia/Jakarta"),
-  dateFormat: varchar("date_format", { length: 50 }).default("DD/MM/YYYY"),
-  currency: varchar("currency", { length: 10 }).default("IDR"),
-  currencySymbol: varchar("currency_symbol", { length: 10 }).default("Rp"),
-  maintenanceMode: boolean("maintenance_mode").default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
-
 // 3. Companies Table
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -179,6 +174,7 @@ export const companies = pgTable("companies", {
   address: varchar("address", { length: 255 }),
   logoUrl: varchar("logo_url", { length: 255 }),
   isDefault: boolean("is_default").default(false),
+  highValuePoThreshold: numeric("high_value_po_threshold", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -196,6 +192,9 @@ export const branches = pgTable("branches", {
   code: varchar("code", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 255 }),
   address: varchar("address", { length: 255 }),
+  // Display/organizational label only - the scoping layer (lib/auth/scope.ts)
+  // never reads this; a user sees "all branches in a company" purely by
+  // having an empty branchId, regardless of which branch is flagged here.
   isHeadquarters: boolean("is_headquarters").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -234,6 +233,9 @@ export const users = pgTable("users", {
   branchId: uuid("branch_id").references(() => branches.id, {
     onDelete: "set null",
   }),
+  warehouseId: uuid("warehouse_id").references(() => warehouses.id, {
+    onDelete: "set null",
+  }),
   roleId: uuid("role_id").references(() => roles.id, { onDelete: "set null" }),
   role: varchar("role", { length: 255 }),
   email: varchar("email", { length: 255 }).notNull().unique(),
@@ -243,6 +245,8 @@ export const users = pgTable("users", {
   themePreference: varchar("theme_preference", { length: 50 }).default("light"),
   status: userStatusEnum("status").default("ACTIVE"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  failedLoginAttempts: integer("failed_login_attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -262,87 +266,108 @@ export const sessions = pgTable("sessions", {
 });
 
 // 8. Customers Table
-export const customers = pgTable("customers", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id")
-    .references(() => tenants.id, { onDelete: "cascade" })
-    .notNull(),
-  companyId: uuid("company_id")
-    .references(() => companies.id, { onDelete: "cascade" })
-    .notNull(),
-  code: varchar("code", { length: 255 }).notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  email: varchar("email", { length: 255 }),
-  phone: varchar("phone", { length: 255 }),
-  taxId: varchar("tax_id", { length: 255 }),
-  address: varchar("address", { length: 255 }),
-  city: varchar("city", { length: 255 }),
-  country: varchar("country", { length: 50 }).default("ID"),
-  creditLimit: numeric("credit_limit", { precision: 15, scale: 2 }).default(
-    "0",
-  ),
-  balanceOutstanding: numeric("balance_outstanding", {
-    precision: 15,
-    scale: 2,
-  }).default("0"),
-  paymentTerms: integer("payment_terms").default(30),
-  status: varchar("status", { length: 50 }).default("ACTIVE"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+export const customers = pgTable(
+  "customers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    code: varchar("code", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }),
+    phone: varchar("phone", { length: 255 }),
+    taxId: varchar("tax_id", { length: 255 }),
+    address: varchar("address", { length: 255 }),
+    city: varchar("city", { length: 255 }),
+    country: varchar("country", { length: 50 }).default("ID"),
+    creditLimit: numeric("credit_limit", { precision: 15, scale: 2 }).default(
+      "0",
+    ),
+    balanceOutstanding: numeric("balance_outstanding", {
+      precision: 15,
+      scale: 2,
+    }).default("0"),
+    paymentTerms: integer("payment_terms").default(30),
+    status: varchar("status", { length: 50 }).default("ACTIVE"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("customers_company_code_idx").on(table.companyId, table.code),
+  ],
+);
 
 // 8. Suppliers Table
-export const suppliers = pgTable("suppliers", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id")
-    .references(() => tenants.id, { onDelete: "cascade" })
-    .notNull(),
-  companyId: uuid("company_id")
-    .references(() => companies.id, { onDelete: "cascade" })
-    .notNull(),
-  code: varchar("code", { length: 255 }).notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  email: varchar("email", { length: 255 }),
-  phone: varchar("phone", { length: 255 }),
-  taxId: varchar("tax_id", { length: 255 }),
-  address: varchar("address", { length: 255 }),
-  city: varchar("city", { length: 255 }),
-  paymentTerms: integer("payment_terms").default(30),
-  rating: numeric("rating", { precision: 3, scale: 1 }).default("5.0"),
-  status: varchar("status", { length: 50 }).default("ACTIVE"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    code: varchar("code", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }),
+    phone: varchar("phone", { length: 255 }),
+    taxId: varchar("tax_id", { length: 255 }),
+    address: varchar("address", { length: 255 }),
+    city: varchar("city", { length: 255 }),
+    paymentTerms: integer("payment_terms").default(30),
+    rating: numeric("rating", { precision: 3, scale: 1 }).default("5.0"),
+    status: varchar("status", { length: 50 }).default("ACTIVE"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("suppliers_company_code_idx").on(table.companyId, table.code),
+  ],
+);
 
 // 9. Products Table
-export const products = pgTable("products", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id")
-    .references(() => tenants.id, { onDelete: "cascade" })
-    .notNull(),
-  companyId: uuid("company_id")
-    .references(() => companies.id, { onDelete: "cascade" })
-    .notNull(),
-  code: varchar("code", { length: 255 }).notNull(),
-  sku: varchar("sku", { length: 255 }).notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  category: varchar("category", { length: 255 }),
-  type: productTypeEnum("type").default("GOODS"),
-  unit: varchar("unit", { length: 50 }).default("PCS"),
-  costPrice: numeric("cost_price", { precision: 15, scale: 2 }).default("0"),
-  sellingPrice: numeric("selling_price", { precision: 15, scale: 2 }).default(
-    "0",
-  ),
-  stockOnHand: numeric("stock_on_hand", { precision: 15, scale: 2 }).default(
-    "0",
-  ),
-  reorderLevel: numeric("reorder_level", { precision: 15, scale: 2 }).default(
-    "0",
-  ),
-  status: varchar("status", { length: 50 }).default("ACTIVE"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    code: varchar("code", { length: 255 }).notNull(),
+    sku: varchar("sku", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    category: varchar("category", { length: 255 }),
+    categoryId: uuid("category_id").references(() => productCategories.id, { onDelete: "set null" }),
+    type: productTypeEnum("type").default("GOODS"),
+    unit: varchar("unit", { length: 50 }).default("PCS"),
+    unitId: uuid("unit_id").references(() => units.id, { onDelete: "set null" }),
+    costPrice: numeric("cost_price", { precision: 15, scale: 2 }).default("0"),
+    sellingPrice: numeric("selling_price", { precision: 15, scale: 2 }).default(
+      "0",
+    ),
+    stockOnHand: numeric("stock_on_hand", { precision: 15, scale: 2 }).default(
+      "0",
+    ),
+    reorderLevel: numeric("reorder_level", { precision: 15, scale: 2 }).default(
+      "0",
+    ),
+    status: varchar("status", { length: 50 }).default("ACTIVE"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("products_company_code_idx").on(table.companyId, table.code),
+    uniqueIndex("products_company_sku_idx").on(table.companyId, table.sku),
+  ],
+);
 
 // 10. Audit Logs Table
 export const auditLogs = pgTable("audit_logs", {
@@ -627,11 +652,19 @@ export const purchaseRequests = pgTable(
     department: varchar("department", { length: 100 }),
     status: prStatusEnum("status").default("DRAFT").notNull(),
     notes: text("notes"),
+    approvedById: uuid("approved_by_id").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    rejectedById: uuid("rejected_by_id").references(() => users.id, { onDelete: "set null" }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("pr_tenant_company_idx").on(table.tenantId, table.companyId),
+    uniqueIndex("pr_company_number_idx").on(table.companyId, table.prNumber),
   ],
 );
 
@@ -687,6 +720,9 @@ export const purchaseOrders = pgTable(
     notes: text("notes"),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     issuedAt: timestamp("issued_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -694,6 +730,7 @@ export const purchaseOrders = pgTable(
     index("po_tenant_company_idx").on(table.tenantId, table.companyId),
     index("po_supplier_idx").on(table.supplierId),
     index("po_warehouse_idx").on(table.warehouseId),
+    uniqueIndex("po_company_number_idx").on(table.companyId, table.poNumber),
   ],
 );
 
@@ -747,12 +784,16 @@ export const goodsReceipts = pgTable(
     receivedById: uuid("received_by_id").references(() => users.id, { onDelete: "set null" }),
     receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow(),
     notes: text("notes"),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("gr_tenant_company_idx").on(table.tenantId, table.companyId),
     index("gr_po_idx").on(table.poId),
+    uniqueIndex("gr_company_number_idx").on(table.companyId, table.grNumber),
   ],
 );
 
@@ -805,12 +846,19 @@ export const supplierInvoices = pgTable(
     totalAmount: numeric("total_amount", { precision: 15, scale: 2 }).default("0").notNull(),
     amountPaid: numeric("amount_paid", { precision: 15, scale: 2 }).default("0").notNull(),
     dueDate: timestamp("due_date", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    isFinalized: boolean("is_finalized").default(false).notNull(),
+    finalizedById: uuid("finalized_by_id").references(() => users.id, { onDelete: "set null" }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("sup_inv_tenant_company_idx").on(table.tenantId, table.companyId),
     index("sup_inv_supplier_idx").on(table.supplierId),
+    uniqueIndex("sup_inv_company_number_idx").on(table.companyId, table.invoiceNumber),
   ],
 );
 
@@ -837,11 +885,16 @@ export const supplierPayments = pgTable(
     referenceNo: varchar("reference_no", { length: 100 }),
     notes: text("notes"),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 20 }).default("ACTIVE").notNull(),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("sup_pay_tenant_company_idx").on(table.tenantId, table.companyId),
     index("sup_pay_invoice_idx").on(table.invoiceId),
+    uniqueIndex("sup_pay_company_number_idx").on(table.companyId, table.paymentNumber),
   ],
 );
 
@@ -874,6 +927,7 @@ export const salesQuotations = pgTable(
   (table) => [
     index("sq_tenant_company_idx").on(table.tenantId, table.companyId),
     index("sq_customer_idx").on(table.customerId),
+    uniqueIndex("sq_company_number_idx").on(table.companyId, table.sqNumber),
   ],
 );
 
@@ -927,12 +981,16 @@ export const salesOrders = pgTable(
     totalAmount: numeric("total_amount", { precision: 15, scale: 2 }).default("0").notNull(),
     notes: text("notes"),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("so_tenant_company_idx").on(table.tenantId, table.companyId),
     index("so_customer_idx").on(table.customerId),
+    uniqueIndex("so_company_number_idx").on(table.companyId, table.soNumber),
   ],
 );
 
@@ -992,12 +1050,16 @@ export const deliveryOrders = pgTable(
     vehicleNumber: varchar("vehicle_number", { length: 50 }),
     notes: text("notes"),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("do_tenant_company_idx").on(table.tenantId, table.companyId),
     index("do_so_idx").on(table.soId),
+    uniqueIndex("do_company_number_idx").on(table.companyId, table.doNumber),
   ],
 );
 
@@ -1039,6 +1101,7 @@ export const customerInvoices = pgTable(
       .notNull(),
     invoiceNumber: varchar("invoice_number", { length: 50 }).notNull(),
     soId: uuid("so_id").references(() => salesOrders.id, { onDelete: "set null" }),
+    doId: uuid("do_id").references(() => deliveryOrders.id, { onDelete: "set null" }),
     customerId: uuid("customer_id")
       .references(() => customers.id, { onDelete: "cascade" })
       .notNull(),
@@ -1054,6 +1117,7 @@ export const customerInvoices = pgTable(
   (table) => [
     index("cust_inv_tenant_company_idx").on(table.tenantId, table.companyId),
     index("cust_inv_customer_idx").on(table.customerId),
+    uniqueIndex("cust_inv_company_number_idx").on(table.companyId, table.invoiceNumber),
   ],
 );
 
@@ -1085,6 +1149,7 @@ export const customerPayments = pgTable(
   (table) => [
     index("cust_pay_tenant_company_idx").on(table.tenantId, table.companyId),
     index("cust_pay_invoice_idx").on(table.invoiceId),
+    uniqueIndex("cust_pay_company_number_idx").on(table.companyId, table.paymentNumber),
   ],
 );
 
@@ -1113,7 +1178,7 @@ export const employees = pgTable(
   },
   (table) => [
     index("emp_tenant_company_idx").on(table.tenantId, table.companyId),
-    index("emp_code_idx").on(table.employeeCode),
+    uniqueIndex("emp_company_code_idx").on(table.companyId, table.employeeCode),
   ],
 );
 
@@ -1148,21 +1213,10 @@ export const vehicles = pgTable(
 // Drizzle Relational Queries Definitions (Official Drizzle ORM Best Practice)
 // -----------------------------------------------------------------------------
 
-export const tenantsRelations = relations(tenants, ({ one, many }) => ({
-  siteSettings: one(siteSettings, {
-    fields: [tenants.id],
-    references: [siteSettings.tenantId],
-  }),
+export const tenantsRelations = relations(tenants, ({ many }) => ({
   companies: many(companies),
   users: many(users),
   auditLogs: many(auditLogs),
-}));
-
-export const siteSettingsRelations = relations(siteSettings, ({ one }) => ({
-  tenant: one(tenants, {
-    fields: [siteSettings.tenantId],
-    references: [tenants.id],
-  }),
 }));
 
 export const companiesRelations = relations(companies, ({ one, many }) => ({
@@ -1181,6 +1235,10 @@ export const usersRelations = relations(users, ({ one }) => ({
   tenant: one(tenants, {
     fields: [users.tenantId],
     references: [tenants.id],
+  }),
+  warehouse: one(warehouses, {
+    fields: [users.warehouseId],
+    references: [warehouses.id],
   }),
 }));
 
@@ -1324,6 +1382,258 @@ export const departmentsRelations = relations(departments, ({ one }) => ({
   company: one(companies, {
     fields: [departments.companyId],
     references: [companies.id],
+  }),
+}));
+
+// 24. Document Sequences (race-condition-safe running document numbers)
+export const documentSequences = pgTable(
+  "document_sequences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    docType: varchar("doc_type", { length: 50 }).notNull(),
+    seq: integer("seq").default(0).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("doc_seq_company_type_idx").on(table.companyId, table.docType),
+  ],
+);
+
+// 25. Sales Returns (Retur Penjualan)
+export const salesReturns = pgTable(
+  "sales_returns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    returnNumber: varchar("return_number", { length: 50 }).notNull(),
+    doId: uuid("do_id").references(() => deliveryOrders.id, { onDelete: "set null" }),
+    soId: uuid("so_id")
+      .references(() => salesOrders.id, { onDelete: "cascade" })
+      .notNull(),
+    customerId: uuid("customer_id")
+      .references(() => customers.id, { onDelete: "cascade" })
+      .notNull(),
+    warehouseId: uuid("warehouse_id")
+      .references(() => warehouses.id, { onDelete: "set null" })
+      .notNull(),
+    status: salesReturnStatusEnum("status").default("COMPLETED").notNull(),
+    reason: text("reason").notNull(),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("sales_return_tenant_company_idx").on(table.tenantId, table.companyId),
+    index("sales_return_so_idx").on(table.soId),
+  ],
+);
+
+export const salesReturnItems = pgTable(
+  "sales_return_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    returnId: uuid("return_id")
+      .references(() => salesReturns.id, { onDelete: "cascade" })
+      .notNull(),
+    productId: uuid("product_id")
+      .references(() => products.id, { onDelete: "restrict" })
+      .notNull(),
+    batchNo: varchar("batch_no", { length: 100 }),
+    qtyReturned: numeric("qty_returned", { precision: 15, scale: 2 }).notNull(),
+    unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).default("0").notNull(),
+  },
+  (table) => [
+    index("sales_return_item_return_idx").on(table.returnId),
+  ],
+);
+
+export const salesReturnsRelations = relations(salesReturns, ({ one, many }) => ({
+  salesOrder: one(salesOrders, {
+    fields: [salesReturns.soId],
+    references: [salesOrders.id],
+  }),
+  deliveryOrder: one(deliveryOrders, {
+    fields: [salesReturns.doId],
+    references: [deliveryOrders.id],
+  }),
+  customer: one(customers, {
+    fields: [salesReturns.customerId],
+    references: [customers.id],
+  }),
+  items: many(salesReturnItems),
+}));
+
+export const salesReturnItemsRelations = relations(salesReturnItems, ({ one }) => ({
+  salesReturn: one(salesReturns, {
+    fields: [salesReturnItems.returnId],
+    references: [salesReturns.id],
+  }),
+  product: one(products, {
+    fields: [salesReturnItems.productId],
+    references: [products.id],
+  }),
+}));
+
+// 26. Purchase RFQs (Request for Quotation) & Vendor Comparison
+export const purchaseRfqs = pgTable(
+  "purchase_rfqs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    rfqNumber: varchar("rfq_number", { length: 50 }).notNull(),
+    prId: uuid("pr_id").references(() => purchaseRequests.id, { onDelete: "set null" }),
+    status: rfqStatusEnum("status").default("DRAFT").notNull(),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelReason: text("cancel_reason"),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("rfq_tenant_company_idx").on(table.tenantId, table.companyId),
+    index("rfq_pr_idx").on(table.prId),
+    uniqueIndex("rfq_company_number_idx").on(table.companyId, table.rfqNumber),
+  ],
+);
+
+export const purchaseRfqItems = pgTable(
+  "purchase_rfq_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    rfqId: uuid("rfq_id")
+      .references(() => purchaseRfqs.id, { onDelete: "cascade" })
+      .notNull(),
+    productId: uuid("product_id")
+      .references(() => products.id, { onDelete: "restrict" })
+      .notNull(),
+    qtyRequested: numeric("qty_requested", { precision: 15, scale: 2 }).notNull(),
+    notes: text("notes"),
+  },
+  (table) => [index("rfq_item_rfq_idx").on(table.rfqId)],
+);
+
+export const rfqQuotes = pgTable(
+  "rfq_quotes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    rfqId: uuid("rfq_id")
+      .references(() => purchaseRfqs.id, { onDelete: "cascade" })
+      .notNull(),
+    supplierId: uuid("supplier_id")
+      .references(() => suppliers.id, { onDelete: "cascade" })
+      .notNull(),
+    status: rfqQuoteStatusEnum("status").default("INVITED").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("rfq_quote_rfq_idx").on(table.rfqId),
+    uniqueIndex("rfq_quote_rfq_supplier_idx").on(table.rfqId, table.supplierId),
+  ],
+);
+
+export const rfqQuoteItems = pgTable(
+  "rfq_quote_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    quoteId: uuid("quote_id")
+      .references(() => rfqQuotes.id, { onDelete: "cascade" })
+      .notNull(),
+    productId: uuid("product_id")
+      .references(() => products.id, { onDelete: "restrict" })
+      .notNull(),
+    unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
+    qty: numeric("qty", { precision: 15, scale: 2 }).notNull(),
+  },
+  (table) => [index("rfq_quote_item_quote_idx").on(table.quoteId)],
+);
+
+export const purchaseRfqsRelations = relations(purchaseRfqs, ({ one, many }) => ({
+  purchaseRequest: one(purchaseRequests, {
+    fields: [purchaseRfqs.prId],
+    references: [purchaseRequests.id],
+  }),
+  items: many(purchaseRfqItems),
+  quotes: many(rfqQuotes),
+}));
+
+export const purchaseRfqItemsRelations = relations(purchaseRfqItems, ({ one }) => ({
+  rfq: one(purchaseRfqs, {
+    fields: [purchaseRfqItems.rfqId],
+    references: [purchaseRfqs.id],
+  }),
+  product: one(products, {
+    fields: [purchaseRfqItems.productId],
+    references: [products.id],
+  }),
+}));
+
+export const rfqQuotesRelations = relations(rfqQuotes, ({ one, many }) => ({
+  rfq: one(purchaseRfqs, {
+    fields: [rfqQuotes.rfqId],
+    references: [purchaseRfqs.id],
+  }),
+  supplier: one(suppliers, {
+    fields: [rfqQuotes.supplierId],
+    references: [suppliers.id],
+  }),
+  items: many(rfqQuoteItems),
+}));
+
+export const rfqQuoteItemsRelations = relations(rfqQuoteItems, ({ one }) => ({
+  quote: one(rfqQuotes, {
+    fields: [rfqQuoteItems.quoteId],
+    references: [rfqQuotes.id],
+  }),
+  product: one(products, {
+    fields: [rfqQuoteItems.productId],
+    references: [products.id],
   }),
 }));
 

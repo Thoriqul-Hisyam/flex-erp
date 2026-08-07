@@ -3,6 +3,7 @@
 import { db, schema } from "@/db";
 import { eq, sql, desc, and, count, sum } from "drizzle-orm";
 import { getSessionUser } from "@/lib/auth/session";
+import { getErrorMessage } from "@/lib/utils";
 
 export interface ActionResult<T = unknown> {
   success: boolean;
@@ -19,22 +20,28 @@ function num(val: string | number | null | undefined): number {
 export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> {
   try {
     const user = await getSessionUser();
-    if (!user || !user.tenantId || !user.companyId) {
+    if (!user || !user.tenantId) {
       return { success: false, message: "Unauthorized." };
     }
     const companyId = user.companyId;
+    // Every dashboard KPI below is company-scoped only (this is a company-
+    // wide summary view, not branch/warehouse-level) - when the acting user
+    // has no companyId (a tenant-global admin), the filter is dropped
+    // entirely so the dashboard aggregates across every company in the
+    // tenant instead of silently rejecting or defaulting to one company.
+    const companyEq = (col: any) => (companyId ? eq(col, companyId) : undefined);
 
     // 1. Total Products
     const [prodCount] = await db
       .select({ count: count() })
       .from(schema.products)
-      .where(eq(schema.products.companyId, companyId));
+      .where(companyEq(schema.products.companyId));
 
     // 2. Total Warehouses
     const [whCount] = await db
       .select({ count: count() })
       .from(schema.warehouses)
-      .where(eq(schema.warehouses.companyId, companyId));
+      .where(companyEq(schema.warehouses.companyId));
 
     // 3. Stock Valuation & Low Stock Count
     const stocks = await db
@@ -49,11 +56,18 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.warehouseStocks)
       .leftJoin(schema.products, eq(schema.warehouseStocks.productId, schema.products.id))
       .leftJoin(schema.warehouses, eq(schema.warehouseStocks.warehouseId, schema.warehouses.id))
-      .where(eq(schema.warehouseStocks.companyId, companyId));
+      .where(companyEq(schema.warehouseStocks.companyId));
 
     let totalStockValuation = 0;
     let lowStockCount = 0;
     const warehouseValMap: Record<string, { name: string; valuation: number }> = {};
+    const lowStockItems: Array<{
+      productId: string;
+      productName: string;
+      warehouseName: string;
+      qtyOnHand: number;
+      reorderLevel: number;
+    }> = [];
 
     for (const s of stocks) {
       const qty = num(s.qtyOnHand);
@@ -70,10 +84,77 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       const minS = num(s.reorderLevel) || 5;
       if (qty <= minS) {
         lowStockCount++;
+        lowStockItems.push({
+          productId: s.productId,
+          productName: s.productId,
+          warehouseName: whName,
+          qtyOnHand: qty,
+          reorderLevel: minS,
+        });
+      }
+    }
+
+    // Resolve product names for the low-stock alert list (kept separate from
+    // the main loop above since it needs a name lookup, not just the id).
+    if (lowStockItems.length > 0) {
+      const productNameRows = await db
+        .select({ id: schema.products.id, name: schema.products.name, sku: schema.products.sku })
+        .from(schema.products)
+        .where(companyEq(schema.products.companyId));
+      const productNameMap = new Map(productNameRows.map((p) => [p.id, `${p.name} (${p.sku})`]));
+      for (const item of lowStockItems) {
+        item.productName = productNameMap.get(item.productId) || item.productName;
       }
     }
 
     const warehouseChartData = Object.values(warehouseValMap);
+
+    // Batch expiry alerts
+    const batches = await db
+      .select({
+        id: schema.batches.id,
+        batchNo: schema.batches.batchNo,
+        expiryDate: schema.batches.expiryDate,
+        qtyRemaining: schema.batches.qtyRemaining,
+        productId: schema.batches.productId,
+      })
+      .from(schema.batches)
+      .where(companyEq(schema.batches.companyId));
+
+    const nowTs = Date.now();
+    let expiredCount = 0;
+    let expiringSoonCount = 0;
+    const expiringSoonBatches: Array<{
+      batchNo: string;
+      productName: string;
+      qtyRemaining: number;
+      expiryDate: string;
+    }> = [];
+
+    if (batches.length > 0) {
+      const batchProductRows = await db
+        .select({ id: schema.products.id, name: schema.products.name })
+        .from(schema.products)
+        .where(companyEq(schema.products.companyId));
+      const batchProductMap = new Map(batchProductRows.map((p) => [p.id, p.name]));
+
+      for (const b of batches) {
+        const remaining = num(b.qtyRemaining);
+        if (!b.expiryDate || remaining <= 0) continue;
+        const expiryTs = new Date(b.expiryDate).getTime();
+        if (expiryTs < nowTs) {
+          expiredCount++;
+        } else if (expiryTs - nowTs < 30 * 24 * 60 * 60 * 1000) {
+          expiringSoonCount++;
+          expiringSoonBatches.push({
+            batchNo: b.batchNo,
+            productName: batchProductMap.get(b.productId) || "Unknown",
+            qtyRemaining: remaining,
+            expiryDate: new Date(b.expiryDate).toISOString(),
+          });
+        }
+      }
+    }
 
     // 4. Sales Metrics & Status Breakdown
     const [soSummary] = await db
@@ -84,7 +165,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.salesOrders)
       .where(
         and(
-          eq(schema.salesOrders.companyId, companyId),
+          companyEq(schema.salesOrders.companyId),
           sql`${schema.salesOrders.status} != 'CANCELLED'`
         )
       );
@@ -95,7 +176,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         count: count(),
       })
       .from(schema.salesOrders)
-      .where(eq(schema.salesOrders.companyId, companyId))
+      .where(companyEq(schema.salesOrders.companyId))
       .groupBy(schema.salesOrders.status);
 
     const soStatusMap: Record<string, number> = { DRAFT: 0, CONFIRMED: 0, PARTIALLY_DELIVERED: 0, DELIVERED: 0, CANCELLED: 0 };
@@ -108,7 +189,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.salesQuotations)
       .where(
         and(
-          eq(schema.salesQuotations.companyId, companyId),
+          companyEq(schema.salesQuotations.companyId),
           eq(schema.salesQuotations.status, "DRAFT")
         )
       );
@@ -116,7 +197,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
     const [doCount] = await db
       .select({ count: count() })
       .from(schema.deliveryOrders)
-      .where(eq(schema.deliveryOrders.companyId, companyId));
+      .where(companyEq(schema.deliveryOrders.companyId));
 
     // 5. Purchasing Metrics
     const [poSummary] = await db
@@ -127,7 +208,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.purchaseOrders)
       .where(
         and(
-          eq(schema.purchaseOrders.companyId, companyId),
+          companyEq(schema.purchaseOrders.companyId),
           sql`${schema.purchaseOrders.status} != 'CANCELLED'`
         )
       );
@@ -137,7 +218,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.purchaseRequests)
       .where(
         and(
-          eq(schema.purchaseRequests.companyId, companyId),
+          companyEq(schema.purchaseRequests.companyId),
           eq(schema.purchaseRequests.status, "SUBMITTED")
         )
       );
@@ -146,22 +227,22 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
     const [custCount] = await db
       .select({ count: count() })
       .from(schema.customers)
-      .where(eq(schema.customers.companyId, companyId));
+      .where(companyEq(schema.customers.companyId));
 
     const [supCount] = await db
       .select({ count: count() })
       .from(schema.suppliers)
-      .where(eq(schema.suppliers.companyId, companyId));
+      .where(companyEq(schema.suppliers.companyId));
 
     const [empCount] = await db
       .select({ count: count() })
       .from(schema.employees)
-      .where(eq(schema.employees.companyId, companyId));
+      .where(companyEq(schema.employees.companyId));
 
     const [vehCount] = await db
       .select({ count: count() })
       .from(schema.vehicles)
-      .where(eq(schema.vehicles.companyId, companyId));
+      .where(companyEq(schema.vehicles.companyId));
 
     // 7. Recent Transactions Feed
     const recentSos = await db
@@ -175,7 +256,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       })
       .from(schema.salesOrders)
       .leftJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
-      .where(eq(schema.salesOrders.companyId, companyId))
+      .where(companyEq(schema.salesOrders.companyId))
       .orderBy(desc(schema.salesOrders.createdAt))
       .limit(5);
 
@@ -192,7 +273,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
       .from(schema.stockMovements)
       .leftJoin(schema.products, eq(schema.stockMovements.productId, schema.products.id))
       .leftJoin(schema.warehouses, eq(schema.stockMovements.warehouseId, schema.warehouses.id))
-      .where(eq(schema.stockMovements.companyId, companyId))
+      .where(companyEq(schema.stockMovements.companyId))
       .orderBy(desc(schema.stockMovements.createdAt))
       .limit(5);
 
@@ -206,7 +287,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         sellingPrice: schema.products.sellingPrice,
       })
       .from(schema.products)
-      .where(eq(schema.products.companyId, companyId))
+      .where(companyEq(schema.products.companyId))
       .orderBy(desc(schema.products.createdAt))
       .limit(3);
 
@@ -235,7 +316,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         .from(schema.salesOrders)
         .where(
           and(
-            eq(schema.salesOrders.companyId, companyId),
+            companyEq(schema.salesOrders.companyId),
             sql`${schema.salesOrders.createdAt} >= ${startOfMonth}`,
             sql`${schema.salesOrders.createdAt} <= ${endOfMonth}`,
             sql`${schema.salesOrders.status} != 'CANCELLED'`
@@ -247,7 +328,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         .from(schema.purchaseOrders)
         .where(
           and(
-            eq(schema.purchaseOrders.companyId, companyId),
+            companyEq(schema.purchaseOrders.companyId),
             sql`${schema.purchaseOrders.createdAt} >= ${startOfMonth}`,
             sql`${schema.purchaseOrders.createdAt} <= ${endOfMonth}`,
             sql`${schema.purchaseOrders.status} != 'CANCELLED'`
@@ -262,7 +343,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         .from(schema.salesOrders)
         .where(
           and(
-            eq(schema.salesOrders.companyId, companyId),
+            companyEq(schema.salesOrders.companyId),
             sql`${schema.salesOrders.createdAt} <= ${endOfMonth}`,
             sql`${schema.salesOrders.status} != 'CANCELLED'`
           )
@@ -273,7 +354,7 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         .from(schema.purchaseOrders)
         .where(
           and(
-            eq(schema.purchaseOrders.companyId, companyId),
+            companyEq(schema.purchaseOrders.companyId),
             sql`${schema.purchaseOrders.createdAt} <= ${endOfMonth}`,
             sql`${schema.purchaseOrders.status} != 'CANCELLED'`
           )
@@ -298,6 +379,10 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         warehousesCount: whCount?.count || 0,
         totalStockValuation,
         lowStockCount,
+        lowStockItems: lowStockItems.slice(0, 10),
+        expiredCount,
+        expiringSoonCount,
+        expiringSoonBatches: expiringSoonBatches.slice(0, 10),
         salesRevenue: num(soSummary?.totalRevenue),
         salesOrdersCount: soSummary?.totalOrders || 0,
         pendingQuotationsCount: sqCount?.count || 0,
@@ -328,8 +413,8 @@ export async function fetchDashboardMetricsAction(): Promise<ActionResult<any>> 
         })),
       },
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("fetchDashboardMetricsAction Error:", error);
-    return { success: false, message: error.message || "Gagal mengambil data dashboard." };
+    return { success: false, message: getErrorMessage(error) || "Gagal mengambil data dashboard." };
   }
 }

@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchStockOpnamesAction,
   createStockOpnameAction,
@@ -79,10 +80,6 @@ export default function StockOpnamesListPage() {
       }
     });
   }, []);
-
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Stock Opname" roleName={permission.roleName} />;
-  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +143,10 @@ export default function StockOpnamesListPage() {
   const totalInProgress = opnames.filter((o) => o.status === "IN_PROGRESS" || o.status === "DRAFT").length;
   const totalCompleted = opnames.filter((o) => o.status === "COMPLETED").length;
   const totalAdjusted = opnames.filter((o) => o.status === "ADJUSTED").length;
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Stock Opname" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -244,31 +245,29 @@ export default function StockOpnamesListPage() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
+          <SearchableSelect
             value={warehouseFilter}
-            onChange={(e) => setWarehouseFilter(e.target.value)}
-            className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-          >
-            <option value="ALL">Semua Gudang</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+            onChange={setWarehouseFilter}
+            className="w-48"
+            options={[
+              { value: "ALL", label: "Semua Gudang" },
+              ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+            ]}
+          />
 
-          <select
+          <SearchableSelect
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-          >
-            <option value="ALL">Semua Status</option>
-            <option value="DRAFT">Draft</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="COMPLETED">Ready to Adjust</option>
-            <option value="ADJUSTED">Adjusted</option>
-            <option value="CANCELLED">Batal</option>
-          </select>
+            onChange={setStatusFilter}
+            className="w-48"
+            options={[
+              { value: "ALL", label: "Semua Status" },
+              { value: "DRAFT", label: "Draft" },
+              { value: "IN_PROGRESS", label: "In Progress" },
+              { value: "COMPLETED", label: "Ready to Adjust" },
+              { value: "ADJUSTED", label: "Adjusted" },
+              { value: "CANCELLED", label: "Batal" },
+            ]}
+          />
         </div>
       </div>
 
@@ -408,19 +407,12 @@ export default function StockOpnamesListPage() {
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Gudang Target Opname <span className="text-red-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedWarehouseId}
-                  onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                  className="w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0088ff]"
-                  required
-                >
-                  <option value="">-- Pilih Gudang --</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedWarehouseId}
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                  placeholder="-- Pilih Gudang --"
+                />
               </div>
 
               <div className="space-y-1.5">

@@ -9,7 +9,9 @@ import { fetchRecordsAction } from "@/app/actions/crud-actions";
 
 export default function WarehousesPage() {
   const [companies, setCompanies] = React.useState<{ label: string; value: string }[]>([]);
-  const [branches, setBranches] = React.useState<{ label: string; value: string }[]>([]);
+  const [branches, setBranches] = React.useState<
+    { label: string; value: string; meta: { companyId: string | null } }[]
+  >([]);
 
   const loadOptions = React.useCallback(() => {
     fetchRecordsAction("Company").then((res) => {
@@ -29,6 +31,7 @@ export default function WarehousesPage() {
           res.data.map((b: any) => ({
             label: b.name || b.code,
             value: b.id,
+            meta: { companyId: b.companyId ?? null },
           }))
         );
       }
@@ -113,7 +116,9 @@ export default function WarehousesPage() {
       name: "branchId",
       label: "Associated Branch Office",
       type: "select" as const,
-      required: true,
+      required: false,
+      clearLabel: "-- Company-wide (No Specific Branch) --",
+      dependsOn: ["companyId"],
       options: branches,
     },
     { name: "location", label: "Physical Location / Address", required: true, placeholder: "Edison, NJ" },

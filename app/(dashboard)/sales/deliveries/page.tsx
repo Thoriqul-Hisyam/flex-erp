@@ -19,14 +19,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import {
   fetchDeliveryOrdersAction,
   fetchSalesOrdersAction,
   createDeliveryOrderAction,
+  cancelDeliveryOrderAction,
 } from "@/app/actions/sales-actions";
 import { fetchEmployeesAction } from "@/app/actions/employee-actions";
 import { fetchVehiclesAction } from "@/app/actions/vehicle-actions";
+import { fetchWarehouseStocksAction, fetchBatchesAction } from "@/app/actions/inventory-actions";
 import { formatNumber } from "@/lib/utils";
 
 export default function DeliveryOrdersPage() {
@@ -60,6 +64,8 @@ export default function DeliveryOrdersPage() {
       batchNo?: string;
     }>
   >([]);
+  const [stockByProduct, setStockByProduct] = React.useState<Record<string, number>>({});
+  const [batchesByProduct, setBatchesByProduct] = React.useState<Record<string, any[]>>({});
   const [isShipping, setIsShipping] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -75,16 +81,19 @@ export default function DeliveryOrdersPage() {
     load();
   }, [load]);
 
+  const loadConfirmedOrders = React.useCallback(async () => {
+    const r = await fetchSalesOrdersAction();
+    if (r.success && Array.isArray(r.data)) {
+      setConfirmedOrders(
+        r.data.filter(
+          (so: any) => so.status === "CONFIRMED" || so.status === "PARTIALLY_DELIVERED"
+        )
+      );
+    }
+  }, []);
+
   React.useEffect(() => {
-    fetchSalesOrdersAction().then((r) => {
-      if (r.success && Array.isArray(r.data)) {
-        setConfirmedOrders(
-          r.data.filter(
-            (so: any) => so.status === "CONFIRMED" || so.status === "PARTIALLY_DELIVERED"
-          )
-        );
-      }
-    });
+    loadConfirmedOrders();
     fetchEmployeesAction().then((r) => {
       if (r.success && Array.isArray(r.data)) {
         setEmployees(r.data.filter((e: any) => e.status === "ACTIVE"));
@@ -95,16 +104,14 @@ export default function DeliveryOrdersPage() {
         setVehicles(r.data.filter((v: any) => v.status === "ACTIVE"));
       }
     });
-  }, []);
-
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Delivery Orders" roleName={permission.roleName} />;
-  }
+  }, [loadConfirmedOrders]);
 
   const handleSoSelect = (soId: string) => {
     setSelectedSoId(soId);
     const so = confirmedOrders.find((s) => s.id === soId);
     setSelectedSo(so || null);
+    setStockByProduct({});
+    setBatchesByProduct({});
 
     if (so && so.items) {
       setItems(
@@ -114,9 +121,59 @@ export default function DeliveryOrdersPage() {
           productSku: i.productSku,
           qtyOrdered: i.qtyOrdered,
           qtyShipped: Math.max(i.qtyOrdered - (i.qtyDelivered || 0), 0),
-          batchNo: `BATCH-${new Date().getFullYear()}-${i.productSku || "DO"}`,
+          batchNo: "",
         }))
       );
+
+      if (so.warehouseId) {
+        fetchWarehouseStocksAction(so.warehouseId).then((r) => {
+          if (r.success && Array.isArray(r.data)) {
+            const map: Record<string, number> = {};
+            for (const s of r.data) map[s.productId] = s.qtyOnHand;
+            setStockByProduct(map);
+            // Clamp the default qty to what's actually available in the warehouse,
+            // so the form never pre-fills a shipment the stock can't cover.
+            setItems((prev) =>
+              prev.map((it) => {
+                const available = map[it.productId];
+                return available !== undefined
+                  ? { ...it, qtyShipped: Math.max(Math.min(it.qtyShipped, available), 0) }
+                  : it;
+              })
+            );
+          }
+        });
+
+        // Pull the ACTUAL batches received into this warehouse (not a free-typed
+        // placeholder), so shipping a batch really traces back to the Goods
+        // Receipt it came from. Default each item to the earliest-expiring
+        // available batch (FEFO) when the product is lot-tracked.
+        fetchBatchesAction(undefined, so.warehouseId).then((r) => {
+          if (r.success && Array.isArray(r.data)) {
+            const byProduct: Record<string, any[]> = {};
+            for (const b of r.data) {
+              if (b.qtyRemaining <= 0 || b.status === "CLOSED") continue;
+              if (!byProduct[b.productId]) byProduct[b.productId] = [];
+              byProduct[b.productId].push(b);
+            }
+            for (const list of Object.values(byProduct)) {
+              list.sort((a: any, b: any) => {
+                if (!a.expiryDate) return 1;
+                if (!b.expiryDate) return -1;
+                return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+              });
+            }
+            setBatchesByProduct(byProduct);
+            setItems((prev) =>
+              prev.map((it) => {
+                const candidates = byProduct[it.productId];
+                const fefoPick = candidates?.find((b) => !b.isExpired);
+                return fefoPick ? { ...it, batchNo: fefoPick.batchNo } : it;
+              })
+            );
+          }
+        });
+      }
     } else {
       setItems([]);
     }
@@ -160,6 +217,34 @@ export default function DeliveryOrdersPage() {
       setNotes("");
       setItems([]);
       load();
+      loadConfirmedOrders();
+    } else {
+      showToast({ type: "error", title: "Gagal", message: res.message });
+    }
+  };
+
+  // Cancel DO State
+  const [cancelModal, setCancelModal] = React.useState<{
+    isOpen: boolean;
+    doId: string;
+    doNumber: string;
+    isLoading: boolean;
+  }>({ isOpen: false, doId: "", doNumber: "", isLoading: false });
+  const [cancelReason, setCancelReason] = React.useState("");
+
+  const handleOpenCancelModal = (id: string, num: string) => {
+    setCancelReason("");
+    setCancelModal({ isOpen: true, doId: id, doNumber: num, isLoading: false });
+  };
+
+  const handleCancelDo = async () => {
+    setCancelModal((prev) => ({ ...prev, isLoading: true }));
+    const res = await cancelDeliveryOrderAction(cancelModal.doId, cancelReason);
+    setCancelModal({ isOpen: false, doId: "", doNumber: "", isLoading: false });
+    if (res.success) {
+      showToast({ type: "success", title: "Berhasil Dibatalkan", message: res.message });
+      load();
+      loadConfirmedOrders();
     } else {
       showToast({ type: "error", title: "Gagal", message: res.message });
     }
@@ -174,6 +259,10 @@ export default function DeliveryOrdersPage() {
       d.warehouseName.toLowerCase().includes(q)
     );
   });
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Delivery Orders" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full">
@@ -284,7 +373,7 @@ export default function DeliveryOrdersPage() {
                     <td className="p-4 text-[#8a94a6]">
                       {d.shippedAt ? new Date(d.shippedAt).toLocaleDateString("id-ID") : "-"}
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-4 text-center flex items-center justify-center gap-1.5">
                       <Button
                         size="sm"
                         variant="outline"
@@ -293,6 +382,16 @@ export default function DeliveryOrdersPage() {
                       >
                         <Printer className="h-3 w-3" /> Cetak Surat Jalan
                       </Button>
+                      {d.status === "SHIPPED" && (permission.isSuperAdmin || permission.canDelete) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenCancelModal(d.id, d.doNumber)}
+                          className="rounded-full h-7 px-2.5 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                        >
+                          Batalkan
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -321,19 +420,15 @@ export default function DeliveryOrdersPage() {
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Pilih Sales Order (SO) <span className="text-red-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedSoId}
-                  onChange={(e) => handleSoSelect(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  required
-                >
-                  <option value="">-- Pilih Sales Order --</option>
-                  {confirmedOrders.map((so) => (
-                    <option key={so.id} value={so.id}>
-                      {so.soNumber} — {so.customerName} ({so.warehouseName})
-                    </option>
-                  ))}
-                </select>
+                  onChange={handleSoSelect}
+                  options={confirmedOrders.map((so) => ({
+                    value: so.id,
+                    label: `${so.soNumber} — ${so.customerName} (${so.warehouseName})`,
+                  }))}
+                  placeholder="-- Pilih Sales Order --"
+                />
               </div>
 
               {selectedSo && (
@@ -358,10 +453,9 @@ export default function DeliveryOrdersPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Supir / Pengantar (Master Karyawan)
                   </label>
-                  <select
+                  <SearchableSelect
                     value={selectedDriverId}
-                    onChange={(e) => {
-                      const val = e.target.value;
+                    onChange={(val) => {
                       setSelectedDriverId(val);
                       if (val && val !== "CUSTOM") {
                         const emp = employees.find((x) => x.id === val);
@@ -370,16 +464,12 @@ export default function DeliveryOrdersPage() {
                         setDriverName("");
                       }
                     }}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Pilih dari Master Karyawan --</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.jobTitle})
-                      </option>
-                    ))}
-                    <option value="CUSTOM">-- Input Manual (Ekspedisi Luar) --</option>
-                  </select>
+                    options={[
+                      ...employees.map((emp) => ({ value: emp.id, label: `${emp.name} (${emp.jobTitle})` })),
+                      { value: "CUSTOM", label: "-- Input Manual (Ekspedisi Luar) --" },
+                    ]}
+                    placeholder="-- Pilih dari Master Karyawan --"
+                  />
                   {(selectedDriverId === "CUSTOM" || (!selectedDriverId && driverName)) && (
                     <Input
                       value={driverName}
@@ -394,10 +484,9 @@ export default function DeliveryOrdersPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Armada Kendaraan (Master Armada)
                   </label>
-                  <select
+                  <SearchableSelect
                     value={selectedVehicleId}
-                    onChange={(e) => {
-                      const val = e.target.value;
+                    onChange={(val) => {
                       setSelectedVehicleId(val);
                       if (val && val !== "CUSTOM") {
                         const v = vehicles.find((x) => x.id === val);
@@ -406,16 +495,15 @@ export default function DeliveryOrdersPage() {
                         setVehicleNumber("");
                       }
                     }}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Pilih dari Master Armada --</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.plateNumber} — {v.vehicleType} ({v.brandModel || "-"})
-                      </option>
-                    ))}
-                    <option value="CUSTOM">-- Input Manual --</option>
-                  </select>
+                    options={[
+                      ...vehicles.map((v) => ({
+                        value: v.id,
+                        label: `${v.plateNumber} — ${v.vehicleType} (${v.brandModel || "-"})`,
+                      })),
+                      { value: "CUSTOM", label: "-- Input Manual --" },
+                    ]}
+                    placeholder="-- Pilih dari Master Armada --"
+                  />
                   {(selectedVehicleId === "CUSTOM" || (!selectedVehicleId && vehicleNumber)) && (
                     <Input
                       value={vehicleNumber}
@@ -435,7 +523,15 @@ export default function DeliveryOrdersPage() {
                   </label>
 
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {items.map((item, index) => (
+                    {items.map((item, index) => {
+                      const stockOnHand = stockByProduct[item.productId];
+                      const isShortOnStock =
+                        stockOnHand !== undefined && stockOnHand < item.qtyOrdered;
+                      const capQty =
+                        stockOnHand !== undefined
+                          ? Math.min(item.qtyOrdered, stockOnHand)
+                          : item.qtyOrdered;
+                      return (
                       <div
                         key={index}
                         className="grid grid-cols-12 gap-2 items-center bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800"
@@ -447,6 +543,14 @@ export default function DeliveryOrdersPage() {
                           <div className="text-[10px] text-[#0088ff] font-mono">
                             {item.productSku} — Pesan: {item.qtyOrdered}
                           </div>
+                          <div
+                            className={`text-[10px] font-mono ${
+                              isShortOnStock ? "text-red-500 font-bold" : "text-[#8a94a6]"
+                            }`}
+                          >
+                            Stok Gudang: {stockOnHand !== undefined ? formatNumber(stockOnHand) : "..."}
+                            {isShortOnStock && " (Tidak cukup!)"}
+                          </div>
                         </div>
 
                         <div className="col-span-3">
@@ -454,7 +558,7 @@ export default function DeliveryOrdersPage() {
                           <Input
                             type="number"
                             min={0}
-                            max={item.qtyOrdered}
+                            max={capQty}
                             value={item.qtyShipped}
                             onChange={(e) =>
                               handleItemChange(index, "qtyShipped", parseFloat(e.target.value) || 0)
@@ -464,16 +568,41 @@ export default function DeliveryOrdersPage() {
                         </div>
 
                         <div className="col-span-4">
-                          <label className="text-[10px] text-slate-500">Nomor Batch</label>
-                          <Input
-                            value={item.batchNo || ""}
-                            onChange={(e) => handleItemChange(index, "batchNo", e.target.value)}
-                            placeholder="Batch No"
-                            className="h-7 text-xs rounded-lg font-mono"
-                          />
+                          <label className="text-[10px] text-slate-500">Nomor Batch (dari Penerimaan)</label>
+                          {(() => {
+                            const candidates = batchesByProduct[item.productId];
+                            if (!candidates || candidates.length === 0) {
+                              return (
+                                <Input
+                                  disabled
+                                  value=""
+                                  placeholder="Tidak ada batch tercatat"
+                                  className="h-7 text-xs rounded-lg font-mono"
+                                />
+                              );
+                            }
+                            return (
+                              <SearchableSelect
+                                value={item.batchNo || ""}
+                                onChange={(val) => handleItemChange(index, "batchNo", val)}
+                                placeholder="-- Pilih Batch --"
+                                options={candidates.map((b: any) => ({
+                                  value: b.batchNo,
+                                  label: `${b.batchNo} (Sisa: ${formatNumber(b.qtyRemaining)}${
+                                    b.expiryDate
+                                      ? ", Exp: " + new Date(b.expiryDate).toLocaleDateString("id-ID")
+                                      : ""
+                                  })${b.isExpired ? " - KADALUARSA" : b.isExpiringSoon ? " - Segera Exp" : ""}`,
+                                  disabled: b.isExpired,
+                                }))}
+                                className="h-7 text-xs"
+                              />
+                            );
+                          })()}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -511,6 +640,22 @@ export default function DeliveryOrdersPage() {
           </div>
         </div>
       )}
+      {/* Cancel DO Modal */}
+      <ConfirmModal
+        isOpen={cancelModal.isOpen}
+        onClose={() => setCancelModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleCancelDo}
+        title="Batalkan Surat Jalan"
+        description={`Batalkan Surat Jalan ${cancelModal.doNumber}? Stok yang sudah dikeluarkan akan dikembalikan ke gudang. Hanya bisa dilakukan sebelum Faktur diterbitkan.`}
+        confirmText="Ya, Batalkan DO"
+        variant="danger"
+        isLoading={cancelModal.isLoading}
+        requireReason
+        reasonLabel="Alasan Pembatalan"
+        reasonValue={cancelReason}
+        onReasonChange={setCancelReason}
+      />
+
       {/* Document Print & Detail Modal */}
       {printDoc && (
         <DocumentPrintModal

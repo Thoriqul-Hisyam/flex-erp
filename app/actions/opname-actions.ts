@@ -3,9 +3,13 @@
 import { db, schema } from "@/db";
 import { eq, sql, desc } from "drizzle-orm";
 import { getSessionUser } from "@/lib/auth/session";
+import { denyIfUnauthorized } from "@/lib/auth/server-permissions";
+import { getScopeContext, withScope } from "@/lib/auth/scope";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { processOpnameAdjustment, type MovementContext } from "@/lib/inventory/stock-engine";
 import { revalidatePath } from "next/cache";
+import { getErrorMessage } from "@/lib/utils";
+import { createStockOpnameSchema, updatePhysicalCountSchema } from "@/lib/validation/inventory";
 
 export interface ActionResult<T = unknown> {
   success: boolean;
@@ -55,13 +59,23 @@ function num(val: unknown): number {
  */
 export async function fetchStockOpnamesAction(warehouseIdFilter?: string): Promise<ActionResult<StockOpnameRow[]>> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "read");
+    if (denied) return denied;
+
     const user = await getSessionUser();
-    if (!user || !user.tenantId || !user.companyId) {
+    if (!user || !user.tenantId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
     }
-    const companyId = user.companyId;
+    const scope = getScopeContext(user);
+    const opnameWhere = await withScope(
+      schema.stockOpnames,
+      scope,
+      warehouseIdFilter && warehouseIdFilter !== "ALL"
+        ? [eq(schema.stockOpnames.warehouseId, warehouseIdFilter)]
+        : undefined,
+    );
 
-    const opnames = await db
+    const opnameBaseQuery = db
       .select({
         id: schema.stockOpnames.id,
         opnameNumber: schema.stockOpnames.opnameNumber,
@@ -75,13 +89,10 @@ export async function fetchStockOpnamesAction(warehouseIdFilter?: string): Promi
         updatedAt: schema.stockOpnames.updatedAt,
       })
       .from(schema.stockOpnames)
-      .leftJoin(schema.warehouses, eq(schema.stockOpnames.warehouseId, schema.warehouses.id))
-      .where(
-        warehouseIdFilter && warehouseIdFilter !== "ALL"
-          ? sql`${schema.stockOpnames.companyId} = ${companyId} AND ${schema.stockOpnames.warehouseId} = ${warehouseIdFilter}`
-          : sql`${schema.stockOpnames.companyId} = ${companyId}`
-      )
-      .orderBy(desc(schema.stockOpnames.createdAt));
+      .leftJoin(schema.warehouses, eq(schema.stockOpnames.warehouseId, schema.warehouses.id));
+    const opnames = await (opnameWhere ? opnameBaseQuery.where(opnameWhere) : opnameBaseQuery).orderBy(
+      desc(schema.stockOpnames.createdAt),
+    );
 
     const result: StockOpnameRow[] = [];
 
@@ -134,9 +145,9 @@ export async function fetchStockOpnamesAction(warehouseIdFilter?: string): Promi
     }
 
     return { success: true, data: result };
-  } catch (error: any) {
+  } catch (error) {
     console.error("fetchStockOpnamesAction Error:", error);
-    return { success: false, message: error.message || "Gagal mengambil data Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal mengambil data Stock Opname." };
   }
 }
 
@@ -147,11 +158,17 @@ export async function fetchStockOpnameDetailAction(
   opnameId: string
 ): Promise<ActionResult<{ header: StockOpnameRow; items: StockOpnameItemRow[] }>> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "read");
+    if (denied) return denied;
+
     const user = await getSessionUser();
-    if (!user || !user.tenantId || !user.companyId) {
+    if (!user || !user.tenantId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
     }
-    const companyId = user.companyId;
+    const scope = getScopeContext(user);
+    const detailWhere = await withScope(schema.stockOpnames, scope, [
+      eq(schema.stockOpnames.id, opnameId),
+    ]);
 
     const [op] = await db
       .select({
@@ -168,9 +185,7 @@ export async function fetchStockOpnameDetailAction(
       })
       .from(schema.stockOpnames)
       .leftJoin(schema.warehouses, eq(schema.stockOpnames.warehouseId, schema.warehouses.id))
-      .where(
-        sql`${schema.stockOpnames.id} = ${opnameId} AND ${schema.stockOpnames.companyId} = ${companyId}`
-      );
+      .where(detailWhere);
 
     if (!op) return { success: false, message: "Stock Opname tidak ditemukan." };
 
@@ -249,9 +264,9 @@ export async function fetchStockOpnameDetailAction(
     };
 
     return { success: true, data: { header, items } };
-  } catch (error: any) {
+  } catch (error) {
     console.error("fetchStockOpnameDetailAction Error:", error);
-    return { success: false, message: error.message || "Gagal mengambil detail Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal mengambil detail Stock Opname." };
   }
 }
 
@@ -263,6 +278,14 @@ export async function createStockOpnameAction(params: {
   notes?: string;
 }): Promise<ActionResult<{ id: string; opnameNumber: string }>> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "create");
+    if (denied) return denied;
+
+    const parsed = createStockOpnameSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
@@ -367,9 +390,9 @@ export async function createStockOpnameAction(params: {
       message: `Sesi Stock Opname ${opnameNumber} berhasil dibuat dengan ${itemsToInsert.length} SKU.`,
       data: { id: newOpname.id, opnameNumber },
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("createStockOpnameAction Error:", error);
-    return { success: false, message: error.message || "Gagal membuat sesi Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal membuat sesi Stock Opname." };
   }
 }
 
@@ -385,6 +408,14 @@ export async function updatePhysicalCountAction(params: {
   }>;
 }): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "update");
+    if (denied) return denied;
+
+    const parsed = updatePhysicalCountSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0]?.message || "Data tidak valid." };
+    }
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
@@ -440,9 +471,9 @@ export async function updatePhysicalCountAction(params: {
 
     revalidatePath(`/inventory/opnames/${params.opnameId}`);
     return { success: true, message: "Hasil perhitungan fisik berhasil disimpan." };
-  } catch (error: any) {
+  } catch (error) {
     console.error("updatePhysicalCountAction Error:", error);
-    return { success: false, message: error.message || "Gagal menyimpan perhitungan fisik." };
+    return { success: false, message: getErrorMessage(error) || "Gagal menyimpan perhitungan fisik." };
   }
 }
 
@@ -451,6 +482,9 @@ export async function updatePhysicalCountAction(params: {
  */
 export async function completeOpnameAction(opnameId: string): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "update");
+    if (denied) return denied;
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
@@ -477,9 +511,9 @@ export async function completeOpnameAction(opnameId: string): Promise<ActionResu
     revalidatePath("/inventory/opnames");
     revalidatePath(`/inventory/opnames/${opnameId}`);
     return { success: true, message: "Perhitungan Stock Opname telah ditandai Selesai." };
-  } catch (error: any) {
+  } catch (error) {
     console.error("completeOpnameAction Error:", error);
-    return { success: false, message: error.message || "Gagal menyelesaikan Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal menyelesaikan Stock Opname." };
   }
 }
 
@@ -488,12 +522,30 @@ export async function completeOpnameAction(opnameId: string): Promise<ActionResu
  */
 export async function adjustOpnameAction(opnameId: string): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "approve");
+    if (denied) return denied;
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
     }
     const tenantId = user.tenantId;
     const companyId = user.companyId;
+
+    const [opname] = await db
+      .select({ createdById: schema.stockOpnames.createdById })
+      .from(schema.stockOpnames)
+      .where(
+        sql`${schema.stockOpnames.id} = ${opnameId} AND ${schema.stockOpnames.companyId} = ${companyId}`
+      );
+
+    if (!opname) return { success: false, message: "Stock Opname tidak ditemukan." };
+    if (opname.createdById && opname.createdById === user.id) {
+      return {
+        success: false,
+        message: "Sesi yang Anda hitung sendiri tidak dapat Anda posting sendiri. Perlu direview oleh user lain.",
+      };
+    }
 
     const ctx: MovementContext = {
       tenantId,
@@ -522,9 +574,9 @@ export async function adjustOpnameAction(opnameId: string): Promise<ActionResult
       success: true,
       message: `Penyesuaian stok berhasil diposting. Total ${result.adjustedCount} SKU ter-update di ledger gudang.`,
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("adjustOpnameAction Error:", error);
-    return { success: false, message: error.message || "Gagal memposting penyesuaian Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal memposting penyesuaian Stock Opname." };
   }
 }
 
@@ -533,6 +585,9 @@ export async function adjustOpnameAction(opnameId: string): Promise<ActionResult
  */
 export async function cancelOpnameAction(opnameId: string): Promise<ActionResult> {
   try {
+    const denied = await denyIfUnauthorized("inv_opnames", "delete");
+    if (denied) return denied;
+
     const user = await getSessionUser();
     if (!user || !user.tenantId || !user.companyId) {
       return { success: false, message: "Unauthorized: mohon login kembali." };
@@ -558,8 +613,8 @@ export async function cancelOpnameAction(opnameId: string): Promise<ActionResult
 
     revalidatePath("/inventory/opnames");
     return { success: true, message: "Sesi Stock Opname berhasil dibatalkan." };
-  } catch (error: any) {
+  } catch (error) {
     console.error("cancelOpnameAction Error:", error);
-    return { success: false, message: error.message || "Gagal membatalkan Stock Opname." };
+    return { success: false, message: getErrorMessage(error) || "Gagal membatalkan Stock Opname." };
   }
 }

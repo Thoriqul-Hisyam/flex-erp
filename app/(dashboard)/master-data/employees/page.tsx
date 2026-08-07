@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { useToast } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchEmployeesAction,
   createEmployeeAction,
@@ -358,36 +359,27 @@ export default function EmployeesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Departemen
                   </label>
-                  <select
+                  <SearchableSelect
                     value={departmentId}
-                    onChange={(e) => setDepartmentId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Tanpa Departemen --</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setDepartmentId}
+                    options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                    placeholder="-- Tanpa Departemen --"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Cabang
                   </label>
-                  <select
+                  <SearchableSelect
                     value={branchId}
-                    onChange={(e) => setBranchId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="">-- Semua Cabang --</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setBranchId}
+                    options={[
+                      { value: "", label: "-- Semua Cabang (Tidak Dibatasi) --" },
+                      ...branches.map((b) => ({ value: b.id, label: b.name })),
+                    ]}
+                    placeholder="-- Semua Cabang --"
+                  />
                 </div>
               </div>
 
@@ -409,14 +401,14 @@ export default function EmployeesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Status
                   </label>
-                  <select
+                  <SearchableSelect
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="INACTIVE">INACTIVE</option>
-                  </select>
+                    onChange={(val) => setStatus(val as any)}
+                    options={[
+                      { value: "ACTIVE", label: "ACTIVE" },
+                      { value: "INACTIVE", label: "INACTIVE" },
+                    ]}
+                  />
                 </div>
               )}
 

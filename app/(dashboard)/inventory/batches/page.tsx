@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { fetchBatchesAction } from "@/app/actions/inventory-actions";
 import { formatNumber } from "@/lib/utils";
 
@@ -161,16 +162,17 @@ export default function InventoryBatchesPage() {
             className="pl-10 rounded-full h-9 text-xs"
           />
         </div>
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">All Status</option>
-          <option value="OPEN">Open / Valid</option>
-          <option value="EXPIRING">Expiring Soon</option>
-          <option value="EXPIRED">Expired</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-48"
+          options={[
+            { value: "ALL", label: "All Status" },
+            { value: "OPEN", label: "Open / Valid" },
+            { value: "EXPIRING", label: "Expiring Soon" },
+            { value: "EXPIRED", label: "Expired" },
+          ]}
+        />
       </div>
 
       {/* Table */}

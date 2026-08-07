@@ -22,9 +22,12 @@ import { Input } from "@/components/ui/input";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
 import { useToast } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   fetchCustomerInvoicesAction,
   fetchSalesOrdersAction,
+  fetchDeliveryOrdersAction,
   createCustomerInvoiceAction,
   recordCustomerPaymentAction,
 } from "@/app/actions/sales-actions";
@@ -43,6 +46,7 @@ export default function CustomerInvoicesPage() {
 
   const [invoices, setInvoices] = React.useState<any[]>([]);
   const [salesOrders, setSalesOrders] = React.useState<any[]>([]);
+  const [deliveryOrders, setDeliveryOrders] = React.useState<any[]>([]);
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [isLoading, setIsLoading] = React.useState(true);
@@ -51,6 +55,7 @@ export default function CustomerInvoicesPage() {
   // Invoice Modal State
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = React.useState(false);
   const [selectedSoId, setSelectedSoId] = React.useState("");
+  const [selectedDoId, setSelectedDoId] = React.useState("");
   const [dueDate, setDueDate] = React.useState("");
   const [isCreatingInvoice, setIsCreatingInvoice] = React.useState(false);
 
@@ -82,7 +87,24 @@ export default function CustomerInvoicesPage() {
         setSalesOrders(r.data.filter((so: any) => so.status !== "CANCELLED" && so.status !== "DRAFT"));
       }
     });
+    fetchDeliveryOrdersAction().then((r) => {
+      if (r.success && Array.isArray(r.data)) {
+        setDeliveryOrders(r.data.filter((d: any) => d.status === "SHIPPED"));
+      }
+    });
   }, []);
+
+  // A SO that already has a whole-SO invoice (doId === null) can never be
+  // invoiced again - exclude it entirely. A SO with only per-DO invoices
+  // stays selectable so its other DOs can still be invoiced.
+  const invoiceableSalesOrders = salesOrders.filter(
+    (so) => !invoices.some((inv) => inv.soId === so.id && !inv.doId && inv.status !== "CANCELLED")
+  );
+  const doOptionsForSelectedSo = deliveryOrders.filter(
+    (d) =>
+      d.soId === selectedSoId &&
+      !invoices.some((inv) => inv.doId === d.id && inv.status !== "CANCELLED")
+  );
 
   if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
     return <UnauthorizedCard pageName="Customer Invoices" roleName={permission.roleName} />;
@@ -98,6 +120,7 @@ export default function CustomerInvoicesPage() {
     setIsCreatingInvoice(true);
     const res = await createCustomerInvoiceAction({
       soId: selectedSoId,
+      doId: selectedDoId || undefined,
       dueDate: dueDate || undefined,
     });
     setIsCreatingInvoice(false);
@@ -106,6 +129,7 @@ export default function CustomerInvoicesPage() {
       showToast({ type: "success", title: "Berhasil", message: res.message });
       setIsInvoiceModalOpen(false);
       setSelectedSoId("");
+      setSelectedDoId("");
       setDueDate("");
       load();
     } else {
@@ -205,16 +229,17 @@ export default function CustomerInvoicesPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-full border border-[#e6e9f0] dark:border-slate-800 px-4 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-        >
-          <option value="ALL">Semua Status Faktur</option>
-          <option value="UNPAID">Belum Dibayar (Unpaid)</option>
-          <option value="PARTIALLY_PAID">Sebagian Dibayar</option>
-          <option value="PAID">Lunas (Paid)</option>
-        </select>
+          onChange={setStatusFilter}
+          className="w-48"
+          options={[
+            { value: "ALL", label: "Semua Status Faktur" },
+            { value: "UNPAID", label: "Belum Dibayar (Unpaid)" },
+            { value: "PARTIALLY_PAID", label: "Sebagian Dibayar" },
+            { value: "PAID", label: "Lunas (Paid)" },
+          ]}
+        />
       </div>
 
       {/* Table */}
@@ -257,6 +282,11 @@ export default function CustomerInvoicesPage() {
                       <td className="p-4 font-mono font-semibold text-[#0088ff]">{inv.invoiceNumber}</td>
                       <td className="p-4 font-mono font-medium text-emerald-600 dark:text-emerald-400">
                         {inv.soNumber}
+                        {inv.doNumber && (
+                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                            Sebagian: {inv.doNumber}
+                          </div>
+                        )}
                       </td>
                       <td className="p-4 font-medium flex items-center gap-1.5">
                         <Users className="h-3.5 w-3.5 text-[#8a94a6]" />
@@ -324,31 +354,46 @@ export default function CustomerInvoicesPage() {
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Pilih Sales Order (SO) <span className="text-red-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
                   value={selectedSoId}
-                  onChange={(e) => setSelectedSoId(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  required
-                >
-                  <option value="">-- Pilih Sales Order --</option>
-                  {salesOrders.map((so) => (
-                    <option key={so.id} value={so.id}>
-                      {so.soNumber} — {so.customerName} ({formatCurrency(so.totalAmount)})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => {
+                    setSelectedSoId(val);
+                    setSelectedDoId("");
+                  }}
+                  options={invoiceableSalesOrders.map((so) => ({
+                    value: so.id,
+                    label: `${so.soNumber} — ${so.customerName} (${formatCurrency(so.totalAmount)})`,
+                  }))}
+                  placeholder="-- Pilih Sales Order --"
+                  searchPlaceholder="Cari nomor SO atau customer..."
+                />
               </div>
+
+              {selectedSoId && doOptionsForSelectedSo.length > 0 && (
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Tagih Untuk
+                  </label>
+                  <SearchableSelect
+                    value={selectedDoId}
+                    onChange={setSelectedDoId}
+                    options={[
+                      { value: "", label: "Seluruh SO (faktur penuh)" },
+                      ...doOptionsForSelectedSo.map((d) => ({
+                        value: d.id,
+                        label: `Hanya Surat Jalan ${d.doNumber} (faktur sebagian)`,
+                      })),
+                    ]}
+                    placeholder="Seluruh SO (faktur penuh)"
+                  />
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Tanggal Jatuh Tempo (Due Date)
                 </label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="rounded-xl h-9 text-xs"
-                />
+                <DatePicker value={dueDate} onChange={setDueDate} />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#f0f2f7] dark:border-slate-800">
@@ -423,16 +468,16 @@ export default function CustomerInvoicesPage() {
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
                     Metode Pembayaran
                   </label>
-                  <select
+                  <SearchableSelect
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 bg-white dark:bg-slate-950 text-xs focus:outline-none"
-                  >
-                    <option value="TRANSFER">Bank Transfer</option>
-                    <option value="CASH">Tunai / Cash</option>
-                    <option value="GIRO_CHECK">Giro / Cek</option>
-                    <option value="CREDIT_CARD">Kartu Kredit</option>
-                  </select>
+                    onChange={setPaymentMethod}
+                    options={[
+                      { value: "TRANSFER", label: "Bank Transfer" },
+                      { value: "CASH", label: "Tunai / Cash" },
+                      { value: "GIRO_CHECK", label: "Giro / Cek" },
+                      { value: "CREDIT_CARD", label: "Kartu Kredit" },
+                    ]}
+                  />
                 </div>
 
                 <div className="space-y-1">

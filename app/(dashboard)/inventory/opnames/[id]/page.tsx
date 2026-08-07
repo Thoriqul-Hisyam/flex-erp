@@ -78,10 +78,6 @@ export default function StockOpnameDetailPage() {
     loadData();
   }, [loadData]);
 
-  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
-    return <UnauthorizedCard pageName="Detail Stock Opname" roleName={permission.roleName} />;
-  }
-
   // Handle local physical count change
   const handlePhysicalChange = (itemId: string, val: string) => {
     setItems((prev) =>
@@ -188,6 +184,10 @@ export default function StockOpnameDetailPage() {
   }
 
   const meta = STATUS_META[header.status] || { label: header.status, variant: "secondary" };
+
+  if (!permission.isSuperAdmin && !permission.canRead && !permission.isLoading) {
+    return <UnauthorizedCard pageName="Detail Stock Opname" roleName={permission.roleName} />;
+  }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto w-full pb-12">

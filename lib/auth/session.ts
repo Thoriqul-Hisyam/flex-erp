@@ -16,6 +16,7 @@ export interface SessionUser {
   tenantId: string;
   companyId: string | null;
   branchId: string | null;
+  warehouseId: string | null;
 }
 
 export interface UserContext {
@@ -30,6 +31,7 @@ export interface UserContext {
   companyLogoUrl?: string;
   branchId: string | null;
   branchName: string;
+  warehouseId: string | null;
   warehouseName: string;
   tenantId: string;
   tenantCode: string;
@@ -114,6 +116,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       tenantId: userRecord.tenantId,
       companyId: userRecord.companyId,
       branchId: userRecord.branchId,
+      warehouseId: userRecord.warehouseId,
     };
   } catch (error) {
     console.warn("[session] getSessionUser error:", error);
@@ -123,19 +126,19 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
 /**
  * Resolves display context (company/branch/tenant/role names) for a session
- * user, querying siteSettings.logoUrl and companies.logoUrl from DB.
+ * user, querying companies.logoUrl from DB for branding.
  */
 export const getUserContext = cache(
   async (user: SessionUser): Promise<UserContext> => {
-    let companyName = "PT Lefatech Indonesia";
-    let branchName = "Lefatech Head Office Jakarta";
-    let warehouseName = "Lefatech Central Warehouse";
-    let tenantCode = "LEFATECH-GLOBAL";
+    let companyName = "-";
+    let branchName = "-";
+    let warehouseName = "-";
+    let tenantCode = "-";
     let roleCode = "UNKNOWN";
     let roleName = user.role || "Unknown";
     let isSuperAdmin = false;
 
-    const [company, branch, tenant, role, settings] = await Promise.all([
+    const [company, branch, warehouse, tenant, role] = await Promise.all([
       user.companyId
         ? db
             .select()
@@ -149,6 +152,14 @@ export const getUserContext = cache(
             .select()
             .from(schema.branches)
             .where(eq(schema.branches.id, user.branchId))
+            .limit(1)
+            .then((rows) => rows[0] ?? null)
+        : Promise.resolve(null),
+      user.warehouseId
+        ? db
+            .select()
+            .from(schema.warehouses)
+            .where(eq(schema.warehouses.id, user.warehouseId))
             .limit(1)
             .then((rows) => rows[0] ?? null)
         : Promise.resolve(null),
@@ -166,18 +177,15 @@ export const getUserContext = cache(
             .limit(1)
             .then((rows) => rows[0] ?? null)
         : Promise.resolve(null),
-      db
-        .select()
-        .from(schema.siteSettings)
-        .where(eq(schema.siteSettings.tenantId, user.tenantId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
     ]);
 
-    let companyLogoUrl = company?.logoUrl || settings?.logoUrl || "/logo/logo.png";
+    // Branding follows the user's own company (companies.logoUrl) - there is
+    // no separate tenant-wide site_settings concept.
+    const companyLogoUrl = company?.logoUrl || "/logo/logo.png";
 
     if (company) companyName = company.name;
     if (branch) branchName = branch.name;
+    if (warehouse) warehouseName = warehouse.name;
     if (tenant) tenantCode = tenant.code;
 
     if (role) {
@@ -205,6 +213,7 @@ export const getUserContext = cache(
       companyLogoUrl,
       branchId: user.branchId,
       branchName,
+      warehouseId: user.warehouseId,
       warehouseName,
       tenantId: user.tenantId,
       tenantCode,

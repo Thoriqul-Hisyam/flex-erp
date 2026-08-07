@@ -13,29 +13,26 @@ interface ThemeContextType {
 
 const ThemeContext = React.createContext<ThemeContextType | undefined>(undefined);
 
+function getCachedTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  try {
+    const cachedTheme = localStorage.getItem("flex_erp_user_theme");
+    if (cachedTheme === "dark" || cachedTheme === "light") return cachedTheme;
+  } catch {
+    // Ignore localStorage error
+  }
+  return "light";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = React.useState<Theme>("light");
+  const [theme, setTheme] = React.useState<Theme>(getCachedTheme);
   const [userId, setUserId] = React.useState<string | null>(null);
 
-  // 1. Initial theme load on mount: check localStorage first for instant load, then sync with server DB
+  // 1. Sync saved preference from Database per-user (localStorage was already
+  // applied synchronously via the useState initializer above).
   React.useEffect(() => {
     let isMounted = true;
 
-    if (typeof window !== "undefined") {
-      try {
-        const cachedTheme = localStorage.getItem("flex_erp_user_theme");
-        if (cachedTheme === "dark" || cachedTheme === "light") {
-          setTheme(cachedTheme);
-          const root = document.documentElement;
-          if (cachedTheme === "dark") root.classList.add("dark");
-          else root.classList.remove("dark");
-        }
-      } catch {
-        // Ignore localStorage error
-      }
-    }
-
-    // Sync saved preference from Database per-user
     getUserThemeAction().then((res) => {
       if (!isMounted) return;
       if (res.success && res.data) {

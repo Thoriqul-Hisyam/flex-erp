@@ -22,7 +22,9 @@ export interface UserPermissionContext {
   userName?: string;
   companyName?: string;
   companyLogoUrl?: string;
+  branchId?: string | null;
   branchName?: string;
+  warehouseId?: string | null;
   warehouseName?: string;
   tenantCode?: string;
   tenantName?: string;
@@ -170,7 +172,9 @@ export function ModuleProvider({ children }: { children: React.ReactNode }) {
             userName: res.data.userName,
             companyName: res.data.companyName,
             companyLogoUrl: res.data.companyLogoUrl,
+            branchId: res.data.branchId,
             branchName: res.data.branchName,
+            warehouseId: res.data.warehouseId,
             warehouseName: res.data.warehouseName,
             tenantCode: res.data.tenantCode,
             tenantName: res.data.tenantName,
@@ -281,7 +285,9 @@ export function usePermissionContext() {
     userName: ctx.userContext.userName,
     companyName: ctx.userContext.companyName,
     companyLogoUrl: ctx.userContext.companyLogoUrl,
+    branchId: ctx.userContext.branchId,
     branchName: ctx.userContext.branchName,
+    warehouseId: ctx.userContext.warehouseId,
     warehouseName: ctx.userContext.warehouseName,
     tenantCode: ctx.userContext.tenantCode,
     tenantName: ctx.userContext.tenantName,

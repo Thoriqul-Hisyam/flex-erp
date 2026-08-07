@@ -6,6 +6,7 @@ export interface CompanyData {
   email?: string;
   phone?: string;
   currency?: string;
+  highValuePoThreshold?: number | string | null;
   branchesCount?: number;
   status: "ACTIVE" | "INACTIVE";
   createdAt?: string;
@@ -106,8 +107,12 @@ export interface UserAccountData {
   email: string;
   role: string;
   roleId?: string;
+  companyId?: string | null;
   companyName?: string;
+  branchId?: string | null;
   branchName?: string;
+  warehouseId?: string | null;
+  warehouseName?: string;
   lastLogin?: string;
   status: "ACTIVE" | "INACTIVE" | "BLOCKED";
 }

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { usePermission } from "@/lib/auth/use-permission";
 import { UnauthorizedCard } from "@/components/ui/unauthorized-card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   fetchStockMovementsAction,
   postTransferAction,
@@ -186,35 +187,23 @@ export default function StockTransfersPage() {
               <label className="text-[11px] font-semibold text-[#8a94a6]">
                 Product
               </label>
-              <select
+              <SearchableSelect
                 value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className="mt-1 w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="">-- Select product --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.sku})
-                  </option>
-                ))}
-              </select>
+                onChange={setProductId}
+                options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))}
+                placeholder="-- Select product --"
+              />
             </div>
             <div>
               <label className="text-[11px] font-semibold text-[#8a94a6]">
                 From Warehouse
               </label>
-              <select
+              <SearchableSelect
                 value={fromWarehouseId}
-                onChange={(e) => setFromWarehouseId(e.target.value)}
-                className="mt-1 w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="">-- Select source --</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setFromWarehouseId}
+                options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                placeholder="-- Select source --"
+              />
             </div>
             <div className="flex items-center justify-center text-[#8a94a6]">
               <ArrowLeftRight className="h-5 w-5" />
@@ -223,18 +212,12 @@ export default function StockTransfersPage() {
               <label className="text-[11px] font-semibold text-[#8a94a6]">
                 To Warehouse
               </label>
-              <select
+              <SearchableSelect
                 value={toWarehouseId}
-                onChange={(e) => setToWarehouseId(e.target.value)}
-                className="mt-1 w-full h-10 rounded-xl border border-[#e6e9f0] dark:border-slate-800 px-3 text-xs bg-transparent text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="">-- Select destination --</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setToWarehouseId}
+                options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                placeholder="-- Select destination --"
+              />
             </div>
             <div>
               <label className="text-[11px] font-semibold text-[#8a94a6]">

@@ -537,6 +537,26 @@ export default function PRDUVentraDashboardPage() {
             </Link>
 
             <Link
+              href="/inventory/batches"
+              className="flex items-center justify-between bg-[#fff7e6] dark:bg-amber-950/30 p-3.5 rounded-2xl border border-amber-100 dark:border-amber-900/40 cursor-pointer hover:scale-[1.02] hover:shadow-md transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-full bg-[#fef3c7] dark:bg-amber-900/60 text-[#d97706] dark:text-amber-400 flex items-center justify-center font-bold text-xs">
+                  !
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-[#0f172a] dark:text-white">
+                    Batch Mendekati/Sudah Expired
+                  </div>
+                  <div className="text-[11px] text-[#8a94a6]">
+                    {metrics?.expiringSoonCount || 0} akan expired &lt;30 hari, {metrics?.expiredCount || 0} sudah expired
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-[#8a94a6]" />
+            </Link>
+
+            <Link
               href="/sales/orders"
               className="flex items-center justify-between bg-[#e6f9f0] dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 cursor-pointer hover:scale-[1.02] hover:shadow-md transition-all"
             >

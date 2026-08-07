@@ -14,6 +14,11 @@ export interface ConfirmModalProps {
   cancelText?: string;
   variant?: "primary" | "success" | "warning" | "danger";
   isLoading?: boolean;
+  /** When set, shows a required reason textarea and disables Confirm until filled. */
+  requireReason?: boolean;
+  reasonLabel?: string;
+  reasonValue?: string;
+  onReasonChange?: (value: string) => void;
 }
 
 export function ConfirmModal({
@@ -26,6 +31,10 @@ export function ConfirmModal({
   cancelText = "Batal",
   variant = "primary",
   isLoading = false,
+  requireReason = false,
+  reasonLabel = "Alasan",
+  reasonValue = "",
+  onReasonChange,
 }: ConfirmModalProps) {
   React.useEffect(() => {
     if (!isOpen) return;
@@ -96,6 +105,22 @@ export function ConfirmModal({
           </button>
         </div>
 
+        {requireReason && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#0f172a] dark:text-white">
+              {reasonLabel} <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={reasonValue}
+              onChange={(e) => onReasonChange?.(e.target.value)}
+              disabled={isLoading}
+              rows={3}
+              className="w-full rounded-xl border border-[#e6e9f0] dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-[#0f172a] dark:text-white placeholder:text-[#8a94a6] focus:outline-none focus:ring-2 focus:ring-[#0088ff]/40"
+              placeholder="Tulis alasan di sini..."
+            />
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f0f2f7] dark:border-slate-800/80">
           <Button
@@ -110,7 +135,7 @@ export function ConfirmModal({
           <Button
             type="button"
             onClick={onConfirm}
-            disabled={isLoading}
+            disabled={isLoading || (requireReason && !reasonValue.trim())}
             className={`rounded-full px-6 h-9 text-xs font-semibold shadow-md ${variantStyles.btnClass}`}
           >
             {isLoading ? "Memproses..." : confirmText}

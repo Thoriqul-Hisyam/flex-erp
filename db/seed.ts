@@ -30,35 +30,7 @@ async function main() {
   }
   console.log("✅ Seeded Tenant:", tenant.code);
 
-  // 2. Seed Tenant Site Settings
-  let [settings] = await db
-    .select()
-    .from(schema.siteSettings)
-    .where(eq(schema.siteSettings.tenantId, tenant.id));
-
-  if (!settings) {
-    [settings] = await db
-      .insert(schema.siteSettings)
-      .values({
-        tenantId: tenant.id,
-        siteName: "Flex ERP",
-        siteTitle: "Flex ERP - PT Lefatech Indonesia Enterprise Portal",
-        logoUrl: "/logo/logo.png",
-        faviconUrl: "/logo/logo.png",
-        primaryColor: "#0284c7",
-        accentColor: "#0369a1",
-        themeMode: "dark",
-        timezone: "Asia/Jakarta",
-        dateFormat: "DD/MM/YYYY",
-        currency: "IDR",
-        currencySymbol: "Rp",
-        maintenanceMode: false,
-      })
-      .returning();
-  }
-  console.log("✅ Seeded Site Settings");
-
-  // 3. Seed Companies
+  // 2. Seed Companies
   const companiesList = [
     { name: "PT Lefatech Indonesia", code: "LEFATECH-ID", taxId: "01.992.810.2-015.000", email: "info@lefatech.co.id", phone: "+62 21 889 0192", currency: "IDR", isDefault: true },
     { name: "PT Lefatech Distribusi Nusantara", code: "LEFATECH-DIST", taxId: "02.881.990.1-016.000", email: "dist@lefatech.co.id", phone: "+62 31 778 0011", currency: "IDR", isDefault: false },
