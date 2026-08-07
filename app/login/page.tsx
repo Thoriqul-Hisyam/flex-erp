@@ -23,6 +23,7 @@ export default function FlexERPLoginPage() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [logoError, setLogoError] = React.useState(false);
 
   // Server action drives authentication (no client-side API fetch).
   const [state, formAction, isPending] = useActionState<
@@ -44,12 +45,22 @@ export default function FlexERPLoginPage() {
           {/* Brand Logo (Top Left) */}
           <div className="absolute top-6 left-6 z-20">
             <div className="flex items-center gap-2">
-              <span
-                className="text-lg font-extrabold tracking-tight"
-                style={{ color: primaryColor }}
-              >
-                {BRAND_NAME}.
-              </span>
+              {!logoError ? (
+                /* eslint-disable-next-html-element-for-img */
+                <img
+                  src="/logo/logo.png"
+                  alt={BRAND_NAME}
+                  onError={() => setLogoError(true)}
+                  className="h-7 w-auto object-contain"
+                />
+              ) : (
+                <span
+                  className="text-lg font-extrabold tracking-tight"
+                  style={{ color: primaryColor }}
+                >
+                  {BRAND_NAME}.
+                </span>
+              )}
             </div>
           </div>
 
@@ -88,12 +99,21 @@ export default function FlexERPLoginPage() {
           <div className="w-full max-w-sm space-y-7">
             {/* Mobile-only brand */}
             <div className="md:hidden flex justify-center mb-2">
-              <span
-                className="text-xl font-extrabold tracking-tight"
-                style={{ color: primaryColor }}
-              >
-                {BRAND_NAME}.
-              </span>
+              {!logoError ? (
+                <img
+                  src="/logo/logo.png"
+                  alt={BRAND_NAME}
+                  onError={() => setLogoError(true)}
+                  className="h-8 w-auto object-contain"
+                />
+              ) : (
+                <span
+                  className="text-xl font-extrabold tracking-tight"
+                  style={{ color: primaryColor }}
+                >
+                  {BRAND_NAME}.
+                </span>
+              )}
             </div>
 
             {/* Title */}
